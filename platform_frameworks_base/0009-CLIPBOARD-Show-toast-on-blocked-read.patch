@@ -1,0 +1,173 @@
+From 83345943c5a50e7558d6122530b7f81ebd0dcf07 Mon Sep 17 00:00:00 2001
+From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
+Date: Mon, 20 Apr 2026 10:48:30 -0500
+Subject: [PATCH 9/9] CLIPBOARD: Show toast on blocked read
+
+---
+ core/res/res/values/strings.xml               |  3 +
+ core/res/res/values/symbols.xml               |  1 +
+ .../server/clipboard/ClipboardService.java    | 87 ++++++++++++++++++-
+ 3 files changed, 88 insertions(+), 3 deletions(-)
+
+diff --git a/core/res/res/values/strings.xml b/core/res/res/values/strings.xml
+index 4dffb4374a9a..4cd96f6fbfe2 100644
+--- a/core/res/res/values/strings.xml
++++ b/core/res/res/values/strings.xml
+@@ -3153,6 +3153,9 @@
+     <!-- Displayed to the user to inform them that an app has accessed clipboard data (pasted as in "copy and paste") [CHAR LIMIT=50] -->
+     <string name="pasted_from_clipboard"><xliff:g id="pasting_app_name" example="Gmail">%1$s</xliff:g> pasted from your clipboard</string>
+ 
++    <!-- Displayed to the user to inform them that an app's clipboard read attempt was blocked [CHAR LIMIT=60] -->
++    <string name="clipboard_read_blocked">Clipboard read blocked for <xliff:g id="blocked_app_name" example="Gmail">%1$s</xliff:g></string>
++
+     <!-- Menu item displayed at the end of a menu to allow users to see another page worth of menu items. This is shown on any app's menu as long as the app has too many items in the menu.-->
+     <string name="more_item_label">More</string>
+     <!-- Prepended to the shortcut for a menu item to indicate that the user should hold the MENU button together with the shortcut to invoke the item. For example, if the shortcut to open a new tab in browser is MENU and B together, then this would be prepended to the letter "B" -->
+diff --git a/core/res/res/values/symbols.xml b/core/res/res/values/symbols.xml
+index da03e9fb7888..dd57c242140a 100644
+--- a/core/res/res/values/symbols.xml
++++ b/core/res/res/values/symbols.xml
+@@ -639,6 +639,7 @@
+   <java-symbol type="string" name="private_dns_broken_detailed" />
+   <java-symbol type="string" name="paste_as_plain_text" />
+   <java-symbol type="string" name="pasted_from_clipboard" />
++     <java-symbol type="string" name="clipboard_read_blocked" />
+   <java-symbol type="string" name="replace" />
+   <java-symbol type="string" name="undo" />
+   <java-symbol type="string" name="redo" />
+diff --git a/services/core/java/com/android/server/clipboard/ClipboardService.java b/services/core/java/com/android/server/clipboard/ClipboardService.java
+index 057d4b963236..3d894afbe1d1 100644
+--- a/services/core/java/com/android/server/clipboard/ClipboardService.java
++++ b/services/core/java/com/android/server/clipboard/ClipboardService.java
+@@ -676,7 +676,9 @@ public class ClipboardService extends SystemService {
+                             attributionTag,
+                             intendingUid,
+                             intendingUserId,
+-                            intendingDeviceId)
++                            intendingDeviceId,
++                            deviceId,
++                            true)
+                     || isDeviceLocked(intendingUserId, deviceId)) {
+                 return null;
+             }
+@@ -1358,7 +1360,7 @@ public class ClipboardService extends SystemService {
+             @UserIdInt int userId,
+             int intendingDeviceId) {
+         return clipboardAccessAllowed(op, callingPackage, attributionTag, uid, userId,
+-                intendingDeviceId, true);
++                intendingDeviceId, intendingDeviceId, true);
+     }
+ 
+     private boolean clipboardAccessAllowed(
+@@ -1369,6 +1371,19 @@ public class ClipboardService extends SystemService {
+             @UserIdInt int userId,
+             int intendingDeviceId,
+             boolean shouldNoteOp) {
++        return clipboardAccessAllowed(op, callingPackage, attributionTag, uid, userId,
++                intendingDeviceId, intendingDeviceId, shouldNoteOp);
++    }
++
++    private boolean clipboardAccessAllowed(
++            int op,
++            String callingPackage,
++            String attributionTag,
++            int uid,
++            @UserIdInt int userId,
++            int intendingDeviceId,
++            int accessDeviceId,
++            boolean shouldNoteOp) {
+ 
+         boolean allowed;
+ 
+@@ -1440,6 +1455,15 @@ public class ClipboardService extends SystemService {
+                     + "user " + userId);
+             return false;
+         }
++        if (op == AppOpsManager.OP_READ_CLIPBOARD) {
++            synchronized (mLock) {
++                Clipboard clipboard = getClipboardLocked(userId, intendingDeviceId);
++                if (clipboard != null && clipboard.primaryClip != null
++                        && UserHandle.isSameApp(uid, clipboard.primaryClipUid)) {
++                    return true;
++                }
++            }
++        }
+         // Finally, check the app op.
+         int appOpsResult;
+         if (shouldNoteOp) {
+@@ -1448,7 +1472,28 @@ public class ClipboardService extends SystemService {
+             appOpsResult = mAppOps.checkOp(op, uid, callingPackage);
+         }
+ 
+-        return appOpsResult == AppOpsManager.MODE_ALLOWED;
++        if (appOpsResult == AppOpsManager.MODE_ALLOWED) {
++            return true;
++        }
++
++        // When the user has explicitly blocked clipboard reads for this app via per-app
++        // restriction, show a toast so they know the block is active. Show once per clip per uid.
++        if (op == AppOpsManager.OP_READ_CLIPBOARD
++                && appOpsResult == AppOpsManager.MODE_IGNORED
++                && shouldNoteOp) {
++            ArraySet<Context> toastContexts = null;
++            synchronized (mLock) {
++                Clipboard clipboard = getClipboardLocked(userId, intendingDeviceId);
++                if (clipboard != null && !clipboard.mNotifiedUids.get(uid)) {
++                    toastContexts = getToastContexts(clipboard, accessDeviceId);
++                    clipboard.mNotifiedUids.put(uid, true);
++                }
++            }
++            if (toastContexts != null) {
++                showClipboardBlockedNotification(callingPackage, userId, toastContexts);
++            }
++        }
++        return false;
+     }
+ 
+     private boolean isDefaultDeviceAndUidFocused(int intendingDeviceId, int uid) {
+@@ -1491,6 +1536,42 @@ public class ClipboardService extends SystemService {
+         return false;
+     }
+ 
++    /**
++     * Shows a toast to inform the user that an app's clipboard read was blocked by the per-app
++     * restriction set in Settings. Shown regardless of the setting for access notifications,
++     * since the user explicitly chose to block and should be informed that the block is working
++     */
++    private void showClipboardBlockedNotification(String callingPackage, @UserIdInt int userId,
++            ArraySet<Context> toastContexts) {
++        Binder.withCleanCallingIdentity(() -> {
++            try {
++                CharSequence callingAppLabel = mPm.getApplicationLabel(
++                        mPm.getApplicationInfoAsUser(callingPackage, 0, userId));
++                String message = getContext().getString(
++                        R.string.clipboard_read_blocked, callingAppLabel);
++                Slog.i(TAG, message);
++                for (int i = 0; i < toastContexts.size(); i++) {
++                    Context toastContext = toastContexts.valueAt(i);
++                    Toast toastToShow;
++                    if (SafetyProtectionUtils.shouldShowSafetyProtectionResources(getContext())) {
++                        Drawable safetyProtectionIcon =
++                                getContext().getDrawable(R.drawable.ic_safety_protection);
++                        toastToShow = Toast.makeCustomToastWithIcon(toastContext,
++                                UiThread.get().getLooper(), message,
++                                Toast.LENGTH_LONG, safetyProtectionIcon);
++                    } else {
++                        toastToShow = Toast.makeText(
++                                toastContext, UiThread.get().getLooper(), message,
++                                Toast.LENGTH_LONG);
++                    }
++                    toastToShow.show();
++                }
++            } catch (PackageManager.NameNotFoundException e) {
++                // do nothing
++            }
++        });
++    }
++
+     /**
+      * Shows a toast to inform the user that an app has accessed the clipboard. This is only done if
+      * the setting is enabled, and if the accessing app is not the source of the data and is not the
+-- 
+2.54.0
+

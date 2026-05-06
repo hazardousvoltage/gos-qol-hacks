@@ -1,0 +1,58 @@
+From 9815add27448b353cccf479918fa20dcbe4be663 Mon Sep 17 00:00:00 2001
+From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
+Date: Fri, 1 May 2026 21:00:51 -0500
+Subject: [PATCH 4/9] LSCOPES: Lie to shitty apps about noisy accuracy
+
+---
+ .../server/location/LocationScopesInterceptor.java | 14 +++++++++-----
+ 1 file changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/services/core/java/com/android/server/location/LocationScopesInterceptor.java b/services/core/java/com/android/server/location/LocationScopesInterceptor.java
+index e240f2b2e040..ad5a54fb35a2 100644
+--- a/services/core/java/com/android/server/location/LocationScopesInterceptor.java
++++ b/services/core/java/com/android/server/location/LocationScopesInterceptor.java
+@@ -64,8 +64,9 @@ public final class LocationScopesInterceptor {
+     // prevent an obviously static output.
+     private static final float NOISY_JITTER_METERS = 2f;
+ 
+-    // Accuracy reported for fixed-mode locations — looks like a perfect GPS fix.
+-    private static final float FIXED_ACCURACY_M = 5.0f;
++    // Accuracy reported for spoofed locations: looks like a good GPS fix even when noisy
++    // mode intentionally displaces the coordinates over a much larger radius.
++    private static final float SPOOFED_ACCURACY_M = 5.0f;
+ 
+     // Altitude fuzz standard deviation as a fraction of the horizontal radius.
+     // Keeps altitude noise plausible (a few metres at typical radii) without requiring
+@@ -102,7 +103,10 @@ public final class LocationScopesInterceptor {
+         }
+     }
+ 
+-    // Guarded by itself. Keyed by UID.
++    // Guarded by itself. Keyed by UID instead of package name so shared-UID packages see the
++    // same noisy anchor and cannot compare per-package results to infer spoofing. GosPackageState
++    // is synchronized across shared-UID members, so the package-scoped policy lookup above should
++    // resolve to the same effective Location Scopes config for every package in the UID.
+     private static final HashMap<Integer, NoisyCacheEntry> sNoisyCache = new HashMap<>();
+ 
+     /**
+@@ -170,7 +174,7 @@ public final class LocationScopesInterceptor {
+     private static Location applyNoisy(Location src, LocationScopesConfig cfg, int uid) {
+         double[] center = getCachedNoisyCenter(src, cfg, uid);
+         Location out = applyWithJitter(src, center[0], center[1], NOISY_JITTER_METERS,
+-                Math.max(src.getAccuracy(), cfg.radiusMeters));
++                SPOOFED_ACCURACY_M);
+         // center[2] is the cached fuzzed altitude, or NaN if altitude was never available.
+         if (!Double.isNaN(center[2])) {
+             out.setAltitude(center[2] + gaussianScalarMeters(NOISY_JITTER_METERS));
+@@ -219,7 +223,7 @@ public final class LocationScopesInterceptor {
+ 
+     private static Location applyFixed(Location src, LocationScopesConfig cfg) {
+         Location out = applyWithJitter(src, cfg.latitude, cfg.longitude,
+-                FIXED_JITTER_METERS, FIXED_ACCURACY_M);
++                FIXED_JITTER_METERS, SPOOFED_ACCURACY_M);
+         out.setAltitude(cfg.altitude);
+         return out;
+     }
+-- 
+2.54.0
+

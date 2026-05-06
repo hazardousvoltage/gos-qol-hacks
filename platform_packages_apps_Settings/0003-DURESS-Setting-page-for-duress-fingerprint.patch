@@ -1,0 +1,209 @@
+From b64ae1a8fd318fea3166085430ba909961dec42b Mon Sep 17 00:00:00 2001
+From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
+Date: Tue, 28 Apr 2026 21:23:32 -0500
+Subject: [PATCH 3/5] DURESS: Setting page for duress fingerprint
+
+---
+ .../fingerprint_rename_duress_dialog.xml      | 52 +++++++++++++++++++
+ res/values/strings.xml                        |  4 ++
+ .../fingerprint/FingerprintSettings.java      | 33 +++++++++++-
+ 3 files changed, 87 insertions(+), 2 deletions(-)
+ create mode 100644 res/layout/fingerprint_rename_duress_dialog.xml
+
+diff --git a/res/layout/fingerprint_rename_duress_dialog.xml b/res/layout/fingerprint_rename_duress_dialog.xml
+new file mode 100644
+index 00000000000..0494e5fa8ca
+--- /dev/null
++++ b/res/layout/fingerprint_rename_duress_dialog.xml
+@@ -0,0 +1,52 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright (C) 2015 The Android Open Source Project
++
++     Licensed under the Apache License, Version 2.0 (the "License");
++     you may not use this file except in compliance with the License.
++     You may obtain a copy of the License at
++
++          http://www.apache.org/licenses/LICENSE-2.0
++
++     Unless required by applicable law or agreed to in writing, software
++     distributed under the License is distributed on an "AS IS" BASIS,
++     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++     See the License for the specific language governing permissions and
++     limitations under the License.
++-->
++
++<LinearLayout
++    xmlns:android="http://schemas.android.com/apk/res/android"
++    android:orientation="vertical"
++    android:layout_width="match_parent"
++    android:layout_height="match_parent"
++    android:gravity="center_horizontal"
++    android:paddingTop="24dp"
++    android:paddingBottom="17dp"
++    android:paddingEnd="20dp"
++    android:paddingStart="20dp">
++
++    <TextView
++        android:layout_width="wrap_content"
++        android:layout_height="wrap_content"
++        android:layout_gravity="center_vertical|start"
++        android:text="@string/security_settings_fingerprint_enroll_dialog_name_label"
++        android:layout_marginBottom="-8dp"
++        android:layout_marginStart="4dp"
++        android:clipChildren="false"
++        android:clipToPadding="false" />
++
++    <ImeAwareEditText
++        android:id="@+id/fingerprint_rename_field"
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        android:inputType="textCapWords"
++        android:minHeight = "48dp"/>
++
++    <CheckBox
++        android:id="@+id/fingerprint_duress_checkbox"
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        android:layout_marginTop="12dp"
++        android:text="@string/fingerprint_duress_checkbox_label" />
++
++</LinearLayout>
+diff --git a/res/values/strings.xml b/res/values/strings.xml
+index 1d76e61ae93..0776144ec78 100644
+--- a/res/values/strings.xml
++++ b/res/values/strings.xml
+@@ -1719,6 +1719,10 @@
+     <!-- Title shown in a dialog which asks the user to confirm when a single fingerprint gets deleted. [CHAR LIMIT=50]-->
+     <string name="fingerprint_delete_title">Delete \'<xliff:g id="fingerprint_id" example="Fingerprint 2">%1$s</xliff:g>\'</string>
+     <string name="fingerprint_last_delete_message_profile_challenge">You won\'t be able to use your fingerprint to unlock your work profile, authorize purchases, or sign in to work apps.</string>
++    <!-- Badge text shown for an enrolled fingerprint designated as duress trigger. [CHAR LIMIT=30] -->
++    <string name="fingerprint_duress_badge">Duress trigger</string>
++    <!-- Checkbox label in rename dialog for setting a fingerprint as duress trigger. [CHAR LIMIT=45] -->
++    <string name="fingerprint_duress_checkbox_label">Use this fingerprint as duress trigger</string>
+ 
+     <!-- Title of the preferences category for preference items to control encryption -->
+     <string name="encryption_settings_title">Encryption</string>
+diff --git a/src/com/android/settings/biometrics/fingerprint/FingerprintSettings.java b/src/com/android/settings/biometrics/fingerprint/FingerprintSettings.java
+index bc1fbbf7f58..0287e4c4f8f 100644
+--- a/src/com/android/settings/biometrics/fingerprint/FingerprintSettings.java
++++ b/src/com/android/settings/biometrics/fingerprint/FingerprintSettings.java
+@@ -70,6 +70,7 @@ import android.view.WindowInsetsController;
+ import android.view.WindowManager;
+ import android.view.accessibility.AccessibilityEvent;
+ import android.view.accessibility.AccessibilityManager;
++import android.widget.CheckBox;
+ import android.widget.ImeAwareEditText;
+ import android.widget.TextView;
+ import android.widget.Toast;
+@@ -891,6 +892,7 @@ public class FingerprintSettings extends SubSettings {
+                 pref.setFingerprint(item);
+                 pref.setPersistent(false);
+                 pref.setIcon(R.drawable.ic_fingerprint_24dp);
++                pref.setSummary(item.isDuress() ? getString(R.string.fingerprint_duress_badge) : null);
+                 if (mRemovalSidecar.isRemovingFingerprint(item.getBiometricId())) {
+                     pref.setEnabled(false);
+                 }
+@@ -1309,7 +1311,7 @@ public class FingerprintSettings extends SubSettings {
+             if (mFingerprintsRenaming.containsKey(fp.getBiometricId())) {
+                 final Fingerprint f = new Fingerprint(
+                         mFingerprintsRenaming.get(fp.getBiometricId()),
+-                        fp.getGroupId(), fp.getBiometricId(), fp.getDeviceId());
++                        fp.getGroupId(), fp.getBiometricId(), fp.getDeviceId(), fp.isDuress());
+                 args.putParcelable("fingerprint", f);
+             } else {
+                 args.putParcelable("fingerprint", fp);
+@@ -1790,6 +1792,15 @@ public class FingerprintSettings extends SubSettings {
+             updatePreferences();
+         }
+ 
++        private void setDuressFingerprint(int fingerId, boolean isDuress) {
++            if (isDuress) {
++                mFingerprintManager.setDuressFingerprint(mUserId, fingerId);
++            } else {
++                mFingerprintManager.clearDuressFingerprint(mUserId);
++            }
++            updatePreferences();
++        }
++
+         private final Runnable mFingerprintLockoutReset = new Runnable() {
+             @Override
+             public void run() {
+@@ -2038,6 +2049,7 @@ public class FingerprintSettings extends SubSettings {
+ 
+             private Fingerprint mFp;
+             private ImeAwareEditText mDialogTextField;
++            private CheckBox mDuressCheckbox;
+             private AlertDialog mAlertDialog;
+             private @Nullable DialogInterface.OnDismissListener mDismissListener;
+             private boolean mDeleteInProgress;
+@@ -2058,19 +2070,22 @@ public class FingerprintSettings extends SubSettings {
+             public Dialog onCreateDialog(Bundle savedInstanceState) {
+                 mFp = getArguments().getParcelable("fingerprint");
+                 final String fingerName;
++                final boolean isDuress;
+                 final int textSelectionStart;
+                 final int textSelectionEnd;
+                 if (savedInstanceState != null) {
+                     fingerName = savedInstanceState.getString("fingerName");
++                    isDuress = savedInstanceState.getBoolean("isDuress", mFp.isDuress());
+                     textSelectionStart = savedInstanceState.getInt("startSelection", -1);
+                     textSelectionEnd = savedInstanceState.getInt("endSelection", -1);
+                 } else {
+                     fingerName = null;
++                    isDuress = mFp.isDuress();
+                     textSelectionStart = -1;
+                     textSelectionEnd = -1;
+                 }
+                 mAlertDialog = new AlertDialog.Builder(getActivity())
+-                        .setView(R.layout.fingerprint_rename_dialog)
++                        .setView(R.layout.fingerprint_rename_duress_dialog)
+                         .setPositiveButton(R.string.security_settings_fingerprint_enroll_dialog_ok,
+                                 new DialogInterface.OnClickListener() {
+                                     @Override
+@@ -2078,6 +2093,7 @@ public class FingerprintSettings extends SubSettings {
+                                         final String newName =
+                                                 mDialogTextField.getText().toString();
+                                         final CharSequence name = mFp.getName();
++                                        final boolean newIsDuress = mDuressCheckbox.isChecked();
+                                         if (!TextUtils.equals(newName, name)) {
+                                             Log.d(TAG, "rename " + name + " to " + newName);
+                                             mMetricsFeatureProvider.action(getContext(),
+@@ -2089,6 +2105,13 @@ public class FingerprintSettings extends SubSettings {
+                                             parent.renameFingerPrint(mFp.getBiometricId(),
+                                                     newName);
+                                         }
++                                        if (newIsDuress != mFp.isDuress()) {
++                                            FingerprintSettingsFragment parent
++                                                    = (FingerprintSettingsFragment)
++                                                    getTargetFragment();
++                                            parent.setDuressFingerprint(mFp.getBiometricId(),
++                                                    newIsDuress);
++                                        }
+                                         if (mDismissListener != null) {
+                                             mDismissListener.onDismiss(dialog);
+                                         }
+@@ -2100,8 +2123,11 @@ public class FingerprintSettings extends SubSettings {
+                     @Override
+                     public void onShow(DialogInterface dialog) {
+                         mDialogTextField = mAlertDialog.findViewById(R.id.fingerprint_rename_field);
++                        mDuressCheckbox = mAlertDialog.findViewById(
++                                R.id.fingerprint_duress_checkbox);
+                         CharSequence name = fingerName == null ? mFp.getName() : fingerName;
+                         mDialogTextField.setText(name);
++                        mDuressCheckbox.setChecked(isDuress);
+                         mDialogTextField.setFilters(getFilters());
+                         if (textSelectionStart != -1 && textSelectionEnd != -1) {
+                             mDialogTextField.setSelection(textSelectionStart, textSelectionEnd);
+@@ -2137,6 +2163,9 @@ public class FingerprintSettings extends SubSettings {
+                     outState.putInt("startSelection", mDialogTextField.getSelectionStart());
+                     outState.putInt("endSelection", mDialogTextField.getSelectionEnd());
+                 }
++                if (mDuressCheckbox != null) {
++                    outState.putBoolean("isDuress", mDuressCheckbox.isChecked());
++                }
+             }
+ 
+             @Override
+-- 
+2.54.0
+

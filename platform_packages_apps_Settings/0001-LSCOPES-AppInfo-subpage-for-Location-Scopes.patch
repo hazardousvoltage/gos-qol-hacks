@@ -1,0 +1,78 @@
+From bd4dfcf361cf1e02031e14610959ca081d81ed4f Mon Sep 17 00:00:00 2001
+From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
+Date: Thu, 9 Apr 2026 10:43:21 -0500
+Subject: [PATCH 1/5] LSCOPES: AppInfo subpage for Location Scopes
+
+---
+ res/values/strings_ext.xml                    |  2 ++
+ .../spa/app/appinfo/AppInfoSettings.kt        |  1 +
+ .../appinfo/AppLocationScopesPreference.kt    | 32 +++++++++++++++++++
+ 3 files changed, 35 insertions(+)
+ create mode 100644 src/com/android/settings/spa/app/appinfo/AppLocationScopesPreference.kt
+
+diff --git a/res/values/strings_ext.xml b/res/values/strings_ext.xml
+index a7f2c226e69..fe36b8847ff 100644
+--- a/res/values/strings_ext.xml
++++ b/res/values/strings_ext.xml
+@@ -91,6 +91,8 @@ No query or data is sent to the server. These files contain orbits and statuses
+ 
+     <string name="contact_scopes">Contact Scopes</string>
+ 
++    <string name="location_scopes">Location Scopes</string>
++
+     <string name="storage_scopes">Storage Scopes</string>
+ 
+     <string name="conn_checks_grapheneos_server">GrapheneOS server</string>
+diff --git a/src/com/android/settings/spa/app/appinfo/AppInfoSettings.kt b/src/com/android/settings/spa/app/appinfo/AppInfoSettings.kt
+index e1fcc522e1b..b07c3940eed 100644
+--- a/src/com/android/settings/spa/app/appinfo/AppInfoSettings.kt
++++ b/src/com/android/settings/spa/app/appinfo/AppInfoSettings.kt
+@@ -154,6 +154,7 @@ private fun AppInfoSettings(packageInfoPresenter: PackageInfoPresenter) {
+             ManageAgentAppFunctionAccessPreference(app)
+             AppStorageScopesPreference(app)
+             AppContactScopesPreference(app)
++            AppLocationScopesPreference(app)
+             AppStoragePreference(app)
+             InstantAppDomainsPreference(app)
+             AppDataUsagePreference(app)
+diff --git a/src/com/android/settings/spa/app/appinfo/AppLocationScopesPreference.kt b/src/com/android/settings/spa/app/appinfo/AppLocationScopesPreference.kt
+new file mode 100644
+index 00000000000..dd6fa7b7f82
+--- /dev/null
++++ b/src/com/android/settings/spa/app/appinfo/AppLocationScopesPreference.kt
+@@ -0,0 +1,32 @@
++package com.android.settings.spa.app.appinfo
++
++import android.content.pm.ApplicationInfo
++import android.content.pm.GosPackageState
++import android.content.pm.GosPackageStateFlag
++import android.ext.lscopes.LocationScopesApi
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.res.stringResource
++import com.android.settings.R
++import com.android.settingslib.spa.widget.preference.Preference
++import com.android.settingslib.spa.widget.preference.PreferenceModel
++import com.android.settingslib.spaprivileged.model.app.userHandle
++import com.android.settingslib.spaprivileged.model.app.userId
++
++@Composable
++fun AppLocationScopesPreference(app: ApplicationInfo) {
++    val pkgName = app.packageName
++    if (!GosPackageState.get(pkgName, app.userId).hasFlag(GosPackageStateFlag.LOCATION_SCOPES_ENABLED)) {
++        return
++    }
++
++    val context = LocalContext.current
++
++    Preference(object : PreferenceModel {
++        override val title = stringResource(R.string.location_scopes)
++        override val onClick = {
++            val intent = LocationScopesApi.createConfigActivityIntent(pkgName)
++            context.startActivityAsUser(intent, app.userHandle)
++        }
++    })
++}
+-- 
+2.54.0
+

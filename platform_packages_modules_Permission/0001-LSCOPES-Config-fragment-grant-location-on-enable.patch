@@ -1,0 +1,796 @@
+From 23188920c8282cf31053ff714a927e51a70a1fde Mon Sep 17 00:00:00 2001
+From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
+Date: Thu, 9 Apr 2026 10:44:37 -0500
+Subject: [PATCH] LSCOPES: Config fragment, grant location on enable
+
+---
+ PermissionController/AndroidManifest.xml      |   6 +
+ .../res/navigation/nav_graph.xml              |   5 +
+ .../res/values/strings_lscopes.xml            |  30 ++
+ .../lscopes/LocationScopesActivity.kt         |   8 +
+ .../lscopes/LocationScopesFragment.kt         | 344 ++++++++++++++++++
+ .../lscopes/LocationScopesLinks.kt            |  45 +++
+ .../lscopes/LocationScopesUtils.kt            |  76 ++++
+ .../lscopes/LocationScopesWrapperFragment.kt  |   8 +
+ .../PermissionControllerServiceImpl.java      |   7 +
+ .../ui/GrantPermissionsActivity.java          |   9 +
+ .../ui/handheld/ExtraPermissionLink.kt        |   4 +
+ .../max35/LegacyAppPermissionFragment.java    |  30 ++
+ .../handheld/v36/AppPermissionFragment.java   |  30 ++
+ 13 files changed, 602 insertions(+)
+ create mode 100644 PermissionController/res/values/strings_lscopes.xml
+ create mode 100644 PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesActivity.kt
+ create mode 100644 PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesFragment.kt
+ create mode 100644 PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesLinks.kt
+ create mode 100644 PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesUtils.kt
+ create mode 100644 PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesWrapperFragment.kt
+
+diff --git a/PermissionController/AndroidManifest.xml b/PermissionController/AndroidManifest.xml
+index 74ae6a1623..c93a95e1ac 100644
+--- a/PermissionController/AndroidManifest.xml
++++ b/PermissionController/AndroidManifest.xml
+@@ -735,6 +735,12 @@
+             android:permission="android.permission.WRITE_SECURE_SETTINGS"
+             android:exported="true" />
+ 
++        <activity
++            android:name="com.android.permissioncontroller.lscopes.LocationScopesActivity"
++            android:theme="@style/Theme.PermissionController.Settings.Expressive.FilterTouches"
++            android:permission="android.permission.WRITE_SECURE_SETTINGS"
++            android:exported="true" />
++
+         <service
+             android:name="com.android.permissioncontroller.permission.service.DeviceStateAppFunctionService"
+             android:permission="android.permission.BIND_APP_FUNCTION_SERVICE"
+diff --git a/PermissionController/res/navigation/nav_graph.xml b/PermissionController/res/navigation/nav_graph.xml
+index efc169d099..b0f850419b 100644
+--- a/PermissionController/res/navigation/nav_graph.xml
++++ b/PermissionController/res/navigation/nav_graph.xml
+@@ -202,4 +202,9 @@
+         android:name="com.android.permissioncontroller.cscopes.ContactScopesWrapperFragment"
+         android:label="ContactScopes"/>
+ 
++    <fragment
++        android:id="@+id/location_scopes"
++        android:name="com.android.permissioncontroller.lscopes.LocationScopesWrapperFragment"
++        android:label="LocationScopes"/>
++
+ </navigation>
+diff --git a/PermissionController/res/values/strings_lscopes.xml b/PermissionController/res/values/strings_lscopes.xml
+new file mode 100644
+index 0000000000..ca3b469aa6
+--- /dev/null
++++ b/PermissionController/res/values/strings_lscopes.xml
+@@ -0,0 +1,30 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++    <string name="location_scopes">Location Scopes</string>
++    <string name="setup_location_scopes">Location Scopes</string>
++    <string name="lscopes_allowed_suffix">Scopes</string>
++
++    <string name="lscopes_enable">Enable Location Scopes</string>
++
++    <string name="lscopes_mode">Mode</string>
++    <string name="location_scopes_mode_normal">Normal</string>
++    <string name="location_scopes_mode_noisy">Noisy</string>
++    <string name="location_scopes_mode_fixed">Fixed</string>
++
++    <string name="lscopes_radius">Radius (meters)</string>
++    <string name="lscopes_noisy_ttl">Cache lifetime (seconds)</string>
++    <string name="lscopes_refresh_noisy_location">Refresh Now</string>
++    <string name="lscopes_toast_invalid_ttl">Cache lifetime must be a positive number of seconds</string>
++    <string name="lscopes_latitude">Latitude</string>
++    <string name="lscopes_longitude">Longitude</string>
++    <string name="lscopes_altitude">Altitude</string>
++
++    <string name="lscopes_disabled_footer">Location Scopes is disabled.</string>
++    <string name="lscopes_enabled_footer">Choose whether this app gets real, noisy, or fixed location data.</string>
++
++    <string name="lscopes_toast_invalid_radius">Radius must be a positive number</string>
++    <string name="lscopes_toast_invalid_latitude">Latitude must be between -90 and 90</string>
++    <string name="lscopes_toast_invalid_longitude">Longitude must be between -180 and 180</string>
++    <string name="lscopes_toast_invalid_altitude">Altitude must be a valid number</string>
++    <string name="lscopes_toast_location_permissions_granted">Location permissions were granted</string>
++</resources>
+\ No newline at end of file
+diff --git a/PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesActivity.kt b/PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesActivity.kt
+new file mode 100644
+index 0000000000..2db8805ea2
+--- /dev/null
++++ b/PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesActivity.kt
+@@ -0,0 +1,8 @@
++package com.android.permissioncontroller.lscopes
++
++import com.android.permissioncontroller.R
++import com.android.permissioncontroller.ext.PackageExtraConfigActivity
++
++class LocationScopesActivity : PackageExtraConfigActivity() {
++    override fun getNavGraphStart() = R.id.location_scopes
++}
+\ No newline at end of file
+diff --git a/PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesFragment.kt b/PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesFragment.kt
+new file mode 100644
+index 0000000000..dfea55571f
+--- /dev/null
++++ b/PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesFragment.kt
+@@ -0,0 +1,344 @@
++package com.android.permissioncontroller.lscopes
++
++import android.content.Intent
++import android.content.pm.GosPackageState
++import android.content.pm.GosPackageStateFlag
++import android.ext.lscopes.LocationScopesApi
++import android.ext.lscopes.LocationScopesConfig
++import android.net.Uri
++import android.os.Bundle
++import android.text.InputType
++import androidx.annotation.StringRes
++import androidx.preference.EditTextPreference
++import androidx.preference.ListPreference
++import androidx.preference.Preference
++import com.android.permissioncontroller.R
++import com.android.permissioncontroller.ext.PackageExtraConfigFragment
++import com.android.permissioncontroller.ext.addOrRemove
++import com.android.permissioncontroller.ext.createFooterPreference
++import com.android.settingslib.widget.FooterPreference
++import com.android.settingslib.widget.MainSwitchPreference
++
++class LocationScopesFragment : PackageExtraConfigFragment() {
++    private lateinit var mainSwitch: MainSwitchPreference
++    private lateinit var modePreference: ListPreference
++    private lateinit var radiusPreference: EditTextPreference
++    private lateinit var latitudePreference: EditTextPreference
++    private lateinit var longitudePreference: EditTextPreference
++    private lateinit var altitudePreference: EditTextPreference
++    private lateinit var noisyTtlPreference: EditTextPreference
++    private lateinit var refreshNoisyLocationPreference: Preference
++    private lateinit var footer: FooterPreference
++
++    private var updatingUi = false
++
++    override fun onCreate(savedInstanceState: Bundle?) {
++        super.onCreate(savedInstanceState)
++
++        mainSwitch = MainSwitchPreference(context_).apply {
++            setTitle(R.string.lscopes_enable)
++            setOnPreferenceChangeListener { _, newValue ->
++                if (updatingUi) {
++                    return@setOnPreferenceChangeListener true
++                }
++                setLocationScopesEnabled(newValue as Boolean)
++                true
++            }
++        }
++
++        modePreference = ListPreference(context_).apply {
++            key = "mode"
++            setTitle(R.string.lscopes_mode)
++            entries = arrayOf(
++                getString(R.string.location_scopes_mode_normal),
++                getString(R.string.location_scopes_mode_noisy),
++                getString(R.string.location_scopes_mode_fixed),
++            )
++            entryValues = arrayOf(
++                LocationScopesApi.MODE_NORMAL.toString(),
++                LocationScopesApi.MODE_NOISY.toString(),
++                LocationScopesApi.MODE_FIXED.toString(),
++            )
++            setOnPreferenceChangeListener { _, newValue ->
++                if (updatingUi) {
++                    return@setOnPreferenceChangeListener true
++                }
++                val mode = (newValue as String).toIntOrNull() ?: return@setOnPreferenceChangeListener false
++                updateConfig { cfg ->
++                    LocationScopesConfig(
++                        mode,
++                        cfg.latitude,
++                        cfg.longitude,
++                        cfg.altitude,
++                        cfg.radiusMeters,
++                        cfg.noisyTtlMs,
++                        cfg.generation,
++                    )
++                }
++                true
++            }
++        }
++
++        radiusPreference = createNumberPreference(
++            key = "radius",
++            titleRes = R.string.lscopes_radius,
++            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL,
++        ) { value ->
++            val radius = value.toFloatOrNull()
++            if (radius == null || radius <= 0f) {
++                toastManager.showToast(R.string.lscopes_toast_invalid_radius)
++                return@createNumberPreference false
++            }
++            updateConfig { cfg ->
++                LocationScopesConfig(
++                    cfg.mode,
++                    cfg.latitude,
++                    cfg.longitude,
++                    cfg.altitude,
++                    radius,
++                    cfg.noisyTtlMs,
++                    cfg.generation,
++                )
++            }
++            true
++        }
++
++        latitudePreference = createNumberPreference(
++            key = "latitude",
++            titleRes = R.string.lscopes_latitude,
++            inputType = InputType.TYPE_CLASS_NUMBER or
++                InputType.TYPE_NUMBER_FLAG_DECIMAL or
++                InputType.TYPE_NUMBER_FLAG_SIGNED,
++        ) { value ->
++            val latitude = value.toDoubleOrNull()
++            if (latitude == null || latitude < -90.0 || latitude > 90.0) {
++                toastManager.showToast(R.string.lscopes_toast_invalid_latitude)
++                return@createNumberPreference false
++            }
++            updateConfig { cfg ->
++                LocationScopesConfig(
++                    cfg.mode,
++                    latitude,
++                    cfg.longitude,
++                    cfg.altitude,
++                    cfg.radiusMeters,
++                    cfg.noisyTtlMs,
++                    cfg.generation,
++                )
++            }
++            true
++        }
++
++        longitudePreference = createNumberPreference(
++            key = "longitude",
++            titleRes = R.string.lscopes_longitude,
++            inputType = InputType.TYPE_CLASS_NUMBER or
++                InputType.TYPE_NUMBER_FLAG_DECIMAL or
++                InputType.TYPE_NUMBER_FLAG_SIGNED,
++        ) { value ->
++            val longitude = value.toDoubleOrNull()
++            if (longitude == null || longitude < -180.0 || longitude > 180.0) {
++                toastManager.showToast(R.string.lscopes_toast_invalid_longitude)
++                return@createNumberPreference false
++            }
++            updateConfig { cfg ->
++                LocationScopesConfig(
++                    cfg.mode,
++                    cfg.latitude,
++                    longitude,
++                    cfg.altitude,
++                    cfg.radiusMeters,
++                    cfg.noisyTtlMs,
++                    cfg.generation,
++                )
++            }
++            true
++        }
++
++        altitudePreference = createNumberPreference(
++            key = "altitude",
++            titleRes = R.string.lscopes_altitude,
++            inputType = InputType.TYPE_CLASS_NUMBER or
++                InputType.TYPE_NUMBER_FLAG_DECIMAL or
++                InputType.TYPE_NUMBER_FLAG_SIGNED,
++        ) { value ->
++            val altitude = value.toDoubleOrNull()
++            if (altitude == null) {
++                toastManager.showToast(R.string.lscopes_toast_invalid_altitude)
++                return@createNumberPreference false
++            }
++            updateConfig { cfg ->
++                LocationScopesConfig(
++                    cfg.mode,
++                    cfg.latitude,
++                    cfg.longitude,
++                    altitude,
++                    cfg.radiusMeters,
++                    cfg.noisyTtlMs,
++                    cfg.generation,
++                )
++            }
++            true
++        }
++
++        noisyTtlPreference = createNumberPreference(
++            key = "noisy_ttl",
++            titleRes = R.string.lscopes_noisy_ttl,
++            inputType = InputType.TYPE_CLASS_NUMBER,
++        ) { value ->
++            val ttlSecs = value.toLongOrNull()
++            if (ttlSecs == null || ttlSecs <= 0L) {
++                toastManager.showToast(R.string.lscopes_toast_invalid_ttl)
++                return@createNumberPreference false
++            }
++            updateConfig { cfg ->
++                LocationScopesConfig(
++                    cfg.mode,
++                    cfg.latitude,
++                    cfg.longitude,
++                    cfg.altitude,
++                    cfg.radiusMeters,
++                    ttlSecs * 1000L,
++                    cfg.generation,
++                )
++            }
++            true
++        }
++
++        refreshNoisyLocationPreference = Preference(context_).apply {
++            key = "refresh_noisy_location"
++            setTitle(R.string.lscopes_refresh_noisy_location)
++            setOnPreferenceClickListener {
++                updateConfig { cfg ->
++                    LocationScopesConfig(
++                        cfg.mode,
++                        cfg.latitude,
++                        cfg.longitude,
++                        cfg.altitude,
++                        cfg.radiusMeters,
++                        cfg.noisyTtlMs,
++                        cfg.generation + 1,
++                    )
++                }
++                true
++            }
++        }
++
++        footer = createFooterPreference().apply {
++            setLearnMoreAction {
++                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://grapheneos.org/usage#location-scopes")))
++            }
++        }
++
++        update()
++    }
++
++    override fun getTitle(): CharSequence = getString(R.string.location_scopes)
++
++    override fun update() {
++        val packageState = getGosPackageState()
++        val enabled = packageState.hasFlag(GosPackageStateFlag.LOCATION_SCOPES_ENABLED)
++        val config = getConfig(packageState)
++
++        updatingUi = true
++        mainSwitch.isChecked = enabled
++        modePreference.value = config.mode.toString()
++        modePreference.summary = modeLabel(config.mode)
++        radiusPreference.text = config.radiusMeters.toString()
++        radiusPreference.summary = config.radiusMeters.toString()
++        latitudePreference.text = config.latitude.toString()
++        latitudePreference.summary = config.latitude.toString()
++        longitudePreference.text = config.longitude.toString()
++        longitudePreference.summary = config.longitude.toString()
++        altitudePreference.text = config.altitude.toString()
++        altitudePreference.summary = config.altitude.toString()
++        val ttlSecs = (config.noisyTtlMs / 1000).toString()
++        noisyTtlPreference.text = ttlSecs
++        noisyTtlPreference.summary = ttlSecs
++        updatingUi = false
++
++        addOrRemove(mainSwitch, true)
++        addOrRemove(modePreference, enabled)
++
++        val showNoisyControls = enabled && config.mode == LocationScopesApi.MODE_NOISY
++        addOrRemove(radiusPreference, showNoisyControls)
++        addOrRemove(noisyTtlPreference, showNoisyControls)
++        addOrRemove(refreshNoisyLocationPreference, showNoisyControls)
++
++        val showFixedCoordinates = enabled && config.mode == LocationScopesApi.MODE_FIXED
++        addOrRemove(latitudePreference, showFixedCoordinates)
++        addOrRemove(longitudePreference, showFixedCoordinates)
++        addOrRemove(altitudePreference, showFixedCoordinates)
++
++        footer.setSummary(if (enabled) R.string.lscopes_enabled_footer else R.string.lscopes_disabled_footer)
++        addOrRemove(footer, true)
++    }
++
++    private fun createNumberPreference(
++        key: String,
++        @StringRes titleRes: Int,
++        inputType: Int,
++        onChange: (String) -> Boolean,
++    ): EditTextPreference {
++        return EditTextPreference(context_).apply {
++            this.key = key
++            setTitle(titleRes)
++            setOnBindEditTextListener {
++                it.inputType = inputType
++                it.selectAll()
++            }
++            setOnPreferenceChangeListener { _, newValue ->
++                if (updatingUi) {
++                    return@setOnPreferenceChangeListener true
++                }
++                onChange(newValue as String)
++            }
++        }
++    }
++
++    private fun getConfig(packageState: GosPackageState): LocationScopesConfig {
++        return LocationScopesConfig.deserialize(packageState.locationScopes)
++    }
++
++    private fun updateConfig(transform: (LocationScopesConfig) -> LocationScopesConfig) {
++        val packageState = getGosPackageState()
++        val current = getConfig(packageState)
++        val updated = transform(current)
++
++        packageState.createEditor(pkgName, context_.user).run {
++            setFlagState(GosPackageStateFlag.LOCATION_SCOPES_ENABLED, true)
++            setLocationScopes(updated.serialize())
++            setKillUidAfterApply(false)
++            setNotifyUidAfterApply(true)
++            applyOrPressBack()
++        }
++    }
++
++    private fun setLocationScopesEnabled(enabled: Boolean) {
++        if (enabled && LocationScopesUtils.grantLocationPermissions(context_, pkgName)) {
++            toastManager.showToast(R.string.lscopes_toast_location_permissions_granted)
++        }
++
++        val config = if (enabled) {
++            getConfig(getGosPackageState()).serialize()
++        } else {
++            null
++        }
++
++        GosPackageState.edit(pkgName, context_.user).run {
++            setFlagState(GosPackageStateFlag.LOCATION_SCOPES_ENABLED, enabled)
++            setLocationScopes(config)
++            setKillUidAfterApply(true)
++            setNotifyUidAfterApply(true)
++            applyOrPressBack()
++        }
++    }
++
++    private fun modeLabel(mode: Int): String {
++        return when (mode) {
++            LocationScopesApi.MODE_NORMAL -> getString(R.string.location_scopes_mode_normal)
++            LocationScopesApi.MODE_FIXED -> getString(R.string.location_scopes_mode_fixed)
++            else -> getString(R.string.location_scopes_mode_noisy)
++        }
++    }
++}
+\ No newline at end of file
+diff --git a/PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesLinks.kt b/PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesLinks.kt
+new file mode 100644
+index 0000000000..2edd9a250f
+--- /dev/null
++++ b/PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesLinks.kt
+@@ -0,0 +1,45 @@
++package com.android.permissioncontroller.lscopes
++
++import android.content.Context
++import android.content.pm.GosPackageState
++import android.ext.lscopes.LocationScopesApi
++import android.os.UserHandle
++import android.widget.Button
++import com.android.permissioncontroller.R
++import com.android.permissioncontroller.permission.ui.GrantPermissionsActivity
++import com.android.permissioncontroller.permission.ui.handheld.ExtraPermissionLink
++
++object LocationScopesLinks : ExtraPermissionLink() {
++
++    override fun isVisible(ctx: Context, groupName: String, packageName: String, user: UserHandle) =
++            LocationScopesUtils.isLocationPermissionGroup(groupName)
++
++    override fun setupDialogButton(button: Button) {
++        button.setText(R.string.setup_location_scopes)
++    }
++
++    override fun onDialogButtonClick(activity: GrantPermissionsActivity, packageName: String) {
++        val intent = LocationScopesApi.createConfigActivityIntent(packageName)
++        @Suppress("DEPRECATION")
++        activity.startActivityForResult(intent, GrantPermissionsActivity.REQ_CODE_SETUP_LOCATION_SCOPES)
++    }
++
++    override fun getSettingsDeniedRadioButtonSuffix(ctx: Context, packageState: GosPackageState): String? = null
++
++    override fun getSettingsAllowedRadioButtonSuffix(ctx: Context, packageState: GosPackageState): String? {
++        if (LocationScopesUtils.isLocationScopesEnabled(packageState)) {
++            return " (" + ctx.getString(R.string.lscopes_allowed_suffix) + ")"
++        }
++
++        return null
++    }
++
++    override fun getSettingsLinkText(ctx: Context): CharSequence {
++        return ctx.getText(R.string.location_scopes)
++    }
++
++    override fun onSettingsLinkClick(ctx: Context, packageName: String, user: UserHandle) {
++        val intent = LocationScopesApi.createConfigActivityIntent(packageName)
++        ctx.startActivityAsUser(intent, user)
++    }
++}
+diff --git a/PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesUtils.kt b/PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesUtils.kt
+new file mode 100644
+index 0000000000..2ba3c67224
+--- /dev/null
++++ b/PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesUtils.kt
+@@ -0,0 +1,76 @@
++package com.android.permissioncontroller.lscopes
++
++import android.Manifest
++import android.app.AppOpsManager
++import android.content.Context
++import android.content.pm.GosPackageState
++import android.content.pm.GosPackageStateFlag
++import android.content.pm.PackageManager
++import android.os.Process
++import android.os.UserHandle
++import com.android.permissioncontroller.ext.ScopesUtils
++
++private val LOCATION_PERMISSION_GROUPS = setOf(
++    Manifest.permission_group.LOCATION
++)
++
++private val LOCATION_PERMISSIONS = ScopesUtils.getGroupPerms(LOCATION_PERMISSION_GROUPS)
++
++object LocationScopesUtils {
++
++    fun isLocationPermissionGroup(groupName: String): Boolean {
++        return LOCATION_PERMISSION_GROUPS.contains(groupName)
++    }
++
++    @JvmStatic
++    fun isLocationScopesEnabled(packageName: String, user: UserHandle): Boolean {
++        return isLocationScopesEnabled(GosPackageState.get(packageName, user))
++    }
++
++    fun isLocationScopesEnabled(ps: GosPackageState): Boolean {
++        return ps.hasFlag(GosPackageStateFlag.LOCATION_SCOPES_ENABLED)
++    }
++
++    fun revokeLocationPermissions(ctx: Context, packageName: String): Boolean {
++        return ScopesUtils.revokePermissions(ctx, packageName, LOCATION_PERMISSIONS)
++    }
++
++    // returns whether at least one permission/app-op state was changed
++    fun grantLocationPermissions(ctx: Context, packageName: String): Boolean {
++        val pm = ctx.packageManager
++        val uid = try {
++            pm.getPackageUid(packageName, 0)
++        } catch (_: PackageManager.NameNotFoundException) {
++            return false
++        }
++
++        val appOps = ctx.getSystemService(AppOpsManager::class.java)!!
++        val user = Process.myUserHandle()
++        var changed = false
++
++        // Grant foreground-only ("while using") access for fine and coarse location.
++        // ACCESS_BACKGROUND_LOCATION is intentionally excluded: enabling Location Scopes
++        // must not escalate to always-on access. Apps that need background location can
++        // request it through the normal runtime permission prompt.
++        for (permission in listOf(
++                Manifest.permission.ACCESS_FINE_LOCATION,
++                Manifest.permission.ACCESS_COARSE_LOCATION)) {
++            if (pm.checkPermission(permission, packageName) != PackageManager.PERMISSION_GRANTED) {
++                pm.grantRuntimePermission(packageName, permission, user)
++                changed = true
++            }
++
++            val op = AppOpsManager.permissionToOp(permission) ?: continue
++            // Only upgrade from an explicitly denied state. An existing MODE_ALLOWED
++            // ("always") grant is preserved — enabling Location Scopes must not demote it.
++            val currentMode = appOps.checkOpNoThrow(op, uid, packageName)
++            if (currentMode == AppOpsManager.MODE_IGNORED
++                    || currentMode == AppOpsManager.MODE_ERRORED) {
++                appOps.setUidMode(op, uid, AppOpsManager.MODE_FOREGROUND)
++                changed = true
++            }
++        }
++
++        return changed
++    }
++}
+diff --git a/PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesWrapperFragment.kt b/PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesWrapperFragment.kt
+new file mode 100644
+index 0000000000..ddba875771
+--- /dev/null
++++ b/PermissionController/src/com/android/permissioncontroller/lscopes/LocationScopesWrapperFragment.kt
+@@ -0,0 +1,8 @@
++package com.android.permissioncontroller.lscopes
++
++import androidx.preference.PreferenceFragmentCompat
++import com.android.permissioncontroller.permission.ui.handheld.PermissionsCollapsingToolbarBaseFragment
++
++class LocationScopesWrapperFragment : PermissionsCollapsingToolbarBaseFragment() {
++    override fun createPreferenceFragment(): PreferenceFragmentCompat = LocationScopesFragment()
++}
+\ No newline at end of file
+diff --git a/PermissionController/src/com/android/permissioncontroller/permission/service/PermissionControllerServiceImpl.java b/PermissionController/src/com/android/permissioncontroller/permission/service/PermissionControllerServiceImpl.java
+index e3deb58a78..21219b2d87 100644
+--- a/PermissionController/src/com/android/permissioncontroller/permission/service/PermissionControllerServiceImpl.java
++++ b/PermissionController/src/com/android/permissioncontroller/permission/service/PermissionControllerServiceImpl.java
+@@ -70,6 +70,8 @@ import com.android.permissioncontroller.permission.utils.KotlinUtils;
+ import com.android.permissioncontroller.permission.utils.PermissionMapping;
+ import com.android.permissioncontroller.permission.utils.UserSensitiveFlagsUtils;
+ import com.android.permissioncontroller.permission.utils.Utils;
++import com.android.permissioncontroller.R;
++import com.android.permissioncontroller.lscopes.LocationScopesUtils;
+ import com.android.permissioncontroller.permission.utils.v31.AdminRestrictedPermissionsUtils;
+ import com.android.role.controller.model.Role;
+ import com.android.role.controller.model.Roles;
+@@ -446,6 +448,11 @@ public final class PermissionControllerServiceImpl extends PermissionControllerL
+                 boolean isPlatform =
+                         PermissionMapping.getPlatformPermissionGroups().contains(groupName);
+                 CharSequence label = KotlinUtils.INSTANCE.getPermGroupLabel(this, groupName);
++                if (Manifest.permission_group.LOCATION.equals(groupName)
++                        && LocationScopesUtils.isLocationScopesEnabled(
++                                packageName, Process.myUserHandle())) {
++                    label = label + " (" + getString(R.string.lscopes_allowed_suffix) + ")";
++                }
+ 
+                 RuntimePermissionPresentationInfo permission =
+                         new RuntimePermissionPresentationInfo(label,
+diff --git a/PermissionController/src/com/android/permissioncontroller/permission/ui/GrantPermissionsActivity.java b/PermissionController/src/com/android/permissioncontroller/permission/ui/GrantPermissionsActivity.java
+index 519823f34d..525bcf3e32 100644
+--- a/PermissionController/src/com/android/permissioncontroller/permission/ui/GrantPermissionsActivity.java
++++ b/PermissionController/src/com/android/permissioncontroller/permission/ui/GrantPermissionsActivity.java
+@@ -89,6 +89,7 @@ import com.android.permissioncontroller.DeviceUtils;
+ import com.android.permissioncontroller.R;
+ import com.android.permissioncontroller.cscopes.ContactScopesUtils;
+ import com.android.permissioncontroller.ecm.EnhancedConfirmationStatsLogUtils;
++import com.android.permissioncontroller.lscopes.LocationScopesUtils;
+ import com.android.permissioncontroller.permission.model.livedatatypes.LightPermGroupInfo;
+ import com.android.permissioncontroller.permission.ui.auto.GrantPermissionsAutoViewHandler;
+ import com.android.permissioncontroller.permission.ui.handheld.ExtraPermissionLinkKt;
+@@ -1046,6 +1047,7 @@ public class GrantPermissionsActivity extends SettingsActivity
+ 
+     public static final int REQ_CODE_SETUP_STORAGE_SCOPES = 100;
+     public static final int REQ_CODE_SETUP_CONTACT_SCOPES = 101;
++    public static final int REQ_CODE_SETUP_LOCATION_SCOPES = 102;
+ 
+     @Override
+     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+@@ -1071,6 +1073,13 @@ public class GrantPermissionsActivity extends SettingsActivity
+             return;
+         }
+ 
++        if (requestCode == REQ_CODE_SETUP_LOCATION_SCOPES) {
++            if (LocationScopesUtils.isLocationScopesEnabled(mTargetPackage, getUser())) {
++                setResultAndFinish();
++            }
++            return;
++        }
++
+         if (requestCode != APP_PERMISSION_REQUEST_CODE
+                 && requestCode != PHOTO_PICKER_REQUEST_CODE) {
+             return;
+diff --git a/PermissionController/src/com/android/permissioncontroller/permission/ui/handheld/ExtraPermissionLink.kt b/PermissionController/src/com/android/permissioncontroller/permission/ui/handheld/ExtraPermissionLink.kt
+index eab1ffa9c9..0328cacfac 100644
+--- a/PermissionController/src/com/android/permissioncontroller/permission/ui/handheld/ExtraPermissionLink.kt
++++ b/PermissionController/src/com/android/permissioncontroller/permission/ui/handheld/ExtraPermissionLink.kt
+@@ -5,6 +5,7 @@ import android.content.pm.GosPackageState
+ import android.os.UserHandle
+ import android.widget.Button
+ import com.android.permissioncontroller.cscopes.ContactScopesLinks
++import com.android.permissioncontroller.lscopes.LocationScopesLinks
+ import com.android.permissioncontroller.permission.ui.GrantPermissionsActivity
+ import com.android.permissioncontroller.sscopes.StorageScopesLinks
+ 
+@@ -21,6 +22,8 @@ abstract class ExtraPermissionLink {
+ 
+     abstract fun getSettingsDeniedRadioButtonSuffix(ctx: Context, packageState: GosPackageState): String?
+ 
++    open fun getSettingsAllowedRadioButtonSuffix(ctx: Context, packageState: GosPackageState): String? = null
++
+     abstract fun getSettingsLinkText(ctx: Context): CharSequence
+ 
+     abstract fun onSettingsLinkClick(ctx: Context, packageName: String, user: UserHandle)
+@@ -29,6 +32,7 @@ abstract class ExtraPermissionLink {
+ private val allExtraPermissionLinks = arrayOf(
+         StorageScopesLinks,
+         ContactScopesLinks,
++        LocationScopesLinks,
+ )
+ 
+ fun getExtraPermissionLink(ctx: Context, packageName: String, user: UserHandle, groupName: String): ExtraPermissionLink? {
+diff --git a/PermissionController/src/com/android/permissioncontroller/permission/ui/handheld/max35/LegacyAppPermissionFragment.java b/PermissionController/src/com/android/permissioncontroller/permission/ui/handheld/max35/LegacyAppPermissionFragment.java
+index 17e2d2a543..1b753eabc8 100644
+--- a/PermissionController/src/com/android/permissioncontroller/permission/ui/handheld/max35/LegacyAppPermissionFragment.java
++++ b/PermissionController/src/com/android/permissioncontroller/permission/ui/handheld/max35/LegacyAppPermissionFragment.java
+@@ -774,6 +774,9 @@ public class LegacyAppPermissionFragment extends SettingsWithLargeHeader
+     }
+ 
+     private CharSequence mOrigDenyButtonText;
++    private CharSequence mOrigAllowButtonText;
++    private CharSequence mOrigAllowAlwaysButtonText;
++    private CharSequence mOrigAllowForegroundButtonText;
+ 
+     private ViewGroup mExtraViews;
+ 
+@@ -807,6 +810,33 @@ public class LegacyAppPermissionFragment extends SettingsWithLargeHeader
+             }
+         }
+ 
++        String allowItemSuffix = link.getSettingsAllowedRadioButtonSuffix(ctx, packageState);
++
++        if (allowItemSuffix != null) {
++            if (mOrigAllowButtonText == null) {
++                mOrigAllowButtonText = mAllowButton.getText();
++            }
++            if (mOrigAllowAlwaysButtonText == null) {
++                mOrigAllowAlwaysButtonText = mAllowAlwaysButton.getText();
++            }
++            if (mOrigAllowForegroundButtonText == null) {
++                mOrigAllowForegroundButtonText = mAllowForegroundButton.getText();
++            }
++            mAllowButton.setText(mOrigAllowButtonText + allowItemSuffix);
++            mAllowAlwaysButton.setText(mOrigAllowAlwaysButtonText + allowItemSuffix);
++            mAllowForegroundButton.setText(mOrigAllowForegroundButtonText + allowItemSuffix);
++        } else {
++            if (mOrigAllowButtonText != null) {
++                mAllowButton.setText(mOrigAllowButtonText);
++            }
++            if (mOrigAllowAlwaysButtonText != null) {
++                mAllowAlwaysButton.setText(mOrigAllowAlwaysButtonText);
++            }
++            if (mOrigAllowForegroundButtonText != null) {
++                mAllowForegroundButton.setText(mOrigAllowForegroundButtonText);
++            }
++        }
++
+         TextView view = mExtraViews.requireViewById(R.id.app_permission_extra_link_1);
+ 
+         view.setText(link.getSettingsLinkText(ctx));
+diff --git a/PermissionController/src/com/android/permissioncontroller/permission/ui/handheld/v36/AppPermissionFragment.java b/PermissionController/src/com/android/permissioncontroller/permission/ui/handheld/v36/AppPermissionFragment.java
+index 6c4a68664a..a9b3ab3e0d 100644
+--- a/PermissionController/src/com/android/permissioncontroller/permission/ui/handheld/v36/AppPermissionFragment.java
++++ b/PermissionController/src/com/android/permissioncontroller/permission/ui/handheld/v36/AppPermissionFragment.java
+@@ -728,6 +728,9 @@ public class AppPermissionFragment extends SettingsWithLargeHeader
+     }
+ 
+     private CharSequence mOrigDenyButtonTitle;
++    private CharSequence mOrigAllowButtonTitle;
++    private CharSequence mOrigAllowAlwaysButtonTitle;
++    private CharSequence mOrigAllowForegroundButtonTitle;
+ 
+     private boolean setupExtraLinks() {
+         if (!mDenyButton.isEnabled()) {
+@@ -758,6 +761,33 @@ public class AppPermissionFragment extends SettingsWithLargeHeader
+             }
+         }
+ 
++        String allowItemSuffix = link.getSettingsAllowedRadioButtonSuffix(ctx, packageState);
++
++        if (allowItemSuffix != null) {
++            if (mOrigAllowButtonTitle == null) {
++                mOrigAllowButtonTitle = mAllowButton.getTitle();
++            }
++            if (mOrigAllowAlwaysButtonTitle == null) {
++                mOrigAllowAlwaysButtonTitle = mAllowAlwaysButton.getTitle();
++            }
++            if (mOrigAllowForegroundButtonTitle == null) {
++                mOrigAllowForegroundButtonTitle = mAllowForegroundButton.getTitle();
++            }
++            mAllowButton.setTitle(mOrigAllowButtonTitle + allowItemSuffix);
++            mAllowAlwaysButton.setTitle(mOrigAllowAlwaysButtonTitle + allowItemSuffix);
++            mAllowForegroundButton.setTitle(mOrigAllowForegroundButtonTitle + allowItemSuffix);
++        } else {
++            if (mOrigAllowButtonTitle != null) {
++                mAllowButton.setTitle(mOrigAllowButtonTitle);
++            }
++            if (mOrigAllowAlwaysButtonTitle != null) {
++                mAllowAlwaysButton.setTitle(mOrigAllowAlwaysButtonTitle);
++            }
++            if (mOrigAllowForegroundButtonTitle != null) {
++                mAllowForegroundButton.setTitle(mOrigAllowForegroundButtonTitle);
++            }
++        }
++
+         mExtraLink1.setTitle(link.getSettingsLinkText(ctx));
+         mExtraLink1.setOnPreferenceClickListener(p -> {
+             link.onSettingsLinkClick(p.getContext(), mPackageName, mUser);
+-- 
+2.54.0
+

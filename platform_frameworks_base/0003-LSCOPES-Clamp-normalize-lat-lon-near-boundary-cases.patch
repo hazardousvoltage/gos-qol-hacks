@@ -1,0 +1,74 @@
+From 2d3bcb5fca55dc8f2b637023ac0b3b15ac2e45b5 Mon Sep 17 00:00:00 2001
+From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
+Date: Wed, 29 Apr 2026 08:51:48 -0500
+Subject: [PATCH 3/9] LSCOPES: Clamp/normalize lat/lon near boundary cases
+
+---
+ .../location/LocationScopesInterceptor.java   | 32 ++++++++++++++++---
+ 1 file changed, 28 insertions(+), 4 deletions(-)
+
+diff --git a/services/core/java/com/android/server/location/LocationScopesInterceptor.java b/services/core/java/com/android/server/location/LocationScopesInterceptor.java
+index cb0eb69e0517..e240f2b2e040 100644
+--- a/services/core/java/com/android/server/location/LocationScopesInterceptor.java
++++ b/services/core/java/com/android/server/location/LocationScopesInterceptor.java
+@@ -51,6 +51,9 @@ public final class LocationScopesInterceptor {
+ 
+     // Approximate metres per degree of latitude (constant at all latitudes).
+     private static final double METERS_PER_DEGREE_LAT = 111_000.0;
++    private static final double MAX_LATITUDE = 90.0;
++    private static final double MAX_LONGITUDE = 180.0;
++    private static final double FULL_LONGITUDE = 360.0;
+ 
+     // Small jitter applied in FIXED mode to prevent a perfectly static coordinate.
+     private static final float FIXED_JITTER_METERS = 2f;
+@@ -203,8 +206,8 @@ public final class LocationScopesInterceptor {
+             }
+             // Cache miss or stale — displace the current true location and anchor there.
+             double[] offsets = gaussianOffsetDegrees(src.getLatitude(), cfg.radiusMeters);
+-            double centerLat = src.getLatitude() + offsets[0];
+-            double centerLon = src.getLongitude() + offsets[1];
++            double centerLat = clampLatitude(src.getLatitude() + offsets[0]);
++            double centerLon = normalizeLongitude(src.getLongitude() + offsets[1]);
+             double centerAlt = src.hasAltitude()
+                     ? src.getAltitude() + gaussianScalarMeters(altStdDevM)
+                     : Double.NaN;
+@@ -230,13 +233,34 @@ public final class LocationScopesInterceptor {
+             Location src, double baseLat, double baseLon, float jitterMeters, float accuracy) {
+         double[] jitter = gaussianOffsetDegrees(baseLat, jitterMeters);
+         Location out = new Location(src);
+-        out.setLatitude(baseLat + jitter[0]);
+-        out.setLongitude(baseLon + jitter[1]);
++        out.setLatitude(clampLatitude(baseLat + jitter[0]));
++        out.setLongitude(normalizeLongitude(baseLon + jitter[1]));
+         out.setAccuracy(accuracy);
+         out.setMock(false);
+         return out;
+     }
+ 
++    private static double clampLatitude(double lat) {
++        if (lat > MAX_LATITUDE) {
++            return MAX_LATITUDE;
++        }
++        if (lat < -MAX_LATITUDE) {
++            return -MAX_LATITUDE;
++        }
++        return lat;
++    }
++
++    private static double normalizeLongitude(double lon) {
++        lon %= FULL_LONGITUDE;
++        if (lon >= MAX_LONGITUDE) {
++            lon -= FULL_LONGITUDE;
++        }
++        if (lon < -MAX_LONGITUDE) {
++            lon += FULL_LONGITUDE;
++        }
++        return lon;
++    }
++
+     /**
+      * Returns a {@code [latOffsetDegrees, lonOffsetDegrees]} pair drawn from a 2-D Gaussian
+      * distribution with the given standard deviation in metres, centred on {@code refLatitude}.
+-- 
+2.54.0
+

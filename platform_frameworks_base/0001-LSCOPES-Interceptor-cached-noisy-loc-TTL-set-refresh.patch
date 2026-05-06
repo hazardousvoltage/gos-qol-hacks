@@ -1,0 +1,932 @@
+From d99b67d255b859fde7e60f028a5c7542e663b53c Mon Sep 17 00:00:00 2001
+From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
+Date: Thu, 9 Apr 2026 10:39:52 -0500
+Subject: [PATCH 1/9] LSCOPES: Interceptor, cached noisy loc, TTL set &
+ refresh.
+
+---
+ core/api/system-current.txt                   |  30 ++
+ .../android/content/pm/GosPackageState.java   |  26 +-
+ .../content/pm/GosPackageStateFlag.java       |   2 +
+ .../ext/lscopes/LocationScopesApi.java        |  28 ++
+ .../ext/lscopes/LocationScopesConfig.java     | 168 +++++++++++
+ .../location/LocationScopesInterceptor.java   | 281 ++++++++++++++++++
+ .../gnss/GnssMeasurementsProvider.java        |   5 +
+ .../provider/LocationProviderManager.java     |  13 +-
+ .../server/pm/GosPackageStatePermission.java  |   5 +-
+ .../server/pm/GosPackageStatePermissions.java |  10 +-
+ .../server/pm/GosPackageStatePersistence.java |  14 +-
+ .../pm/PackageManagerSettingsTests.java       |   3 +-
+ 12 files changed, 571 insertions(+), 14 deletions(-)
+ create mode 100644 core/java/android/ext/lscopes/LocationScopesApi.java
+ create mode 100644 core/java/android/ext/lscopes/LocationScopesConfig.java
+ create mode 100644 services/core/java/com/android/server/location/LocationScopesInterceptor.java
+
+diff --git a/core/api/system-current.txt b/core/api/system-current.txt
+index 5157bcd3316c..9f5f456969b7 100644
+--- a/core/api/system-current.txt
++++ b/core/api/system-current.txt
+@@ -4362,6 +4362,7 @@ package android.content.pm {
+     method public void writeToParcel(@NonNull android.os.Parcel, int);
+     field @NonNull public static final android.os.Parcelable.Creator<android.content.pm.GosPackageState> CREATOR;
+     field @Nullable public final byte[] contactScopes;
++    field @Nullable public final byte[] locationScopes;
+     field @Nullable public final byte[] storageScopes;
+   }
+ 
+@@ -4375,6 +4376,7 @@ package android.content.pm {
+     method @NonNull public android.content.pm.GosPackageState.Editor setContactScopes(@Nullable byte[]);
+     method @NonNull public android.content.pm.GosPackageState.Editor setFlagState(int, boolean);
+     method @NonNull public android.content.pm.GosPackageState.Editor setKillUidAfterApply(boolean);
++    method @NonNull public android.content.pm.GosPackageState.Editor setLocationScopes(@Nullable byte[]);
+     method @NonNull public android.content.pm.GosPackageState.Editor setNotifyUidAfterApply(boolean);
+     method @NonNull public android.content.pm.GosPackageState.Editor setPackageFlagState(int, boolean);
+     method @NonNull public android.content.pm.GosPackageState.Editor setStorageScopes(@Nullable byte[]);
+@@ -4382,6 +4384,7 @@ package android.content.pm {
+ 
+   public interface GosPackageStateFlag {
+     field public static final int CONTACT_SCOPES_ENABLED = 5; // 0x5
++    field public static final int LOCATION_SCOPES_ENABLED = 29; // 0x1d
+     field public static final int STORAGE_SCOPES_ENABLED = 0; // 0x0
+   }
+ 
+@@ -5388,6 +5391,33 @@ package android.ext.dcl {
+ 
+ }
+ 
++package android.ext.lscopes {
++
++  public final class LocationScopesApi {
++    method @NonNull public static android.content.Intent createConfigActivityIntent(@NonNull String);
++    field public static final float DEFAULT_FUZZ_RADIUS_M = 500.0f;
++    field public static final int MODE_FIXED = 2; // 0x2
++    field public static final int MODE_NOISY = 1; // 0x1
++    field public static final int MODE_NORMAL = 0; // 0x0
++  }
++
++  public final class LocationScopesConfig {
++    ctor public LocationScopesConfig(int, double, double, double, float, long, int);
++    method @NonNull public static android.ext.lscopes.LocationScopesConfig defaultConfig();
++    method @NonNull public static android.ext.lscopes.LocationScopesConfig deserialize(@Nullable byte[]);
++    method @NonNull public byte[] serialize();
++    field public static final long DEFAULT_NOISY_TTL_MS = 86400000L; // 0x5265c00L
++    field public final double altitude;
++    field public final int generation;
++    field public final double latitude;
++    field public final double longitude;
++    field public final int mode;
++    field public final long noisyTtlMs;
++    field public final float radiusMeters;
++  }
++
++}
++
+ package android.ext.settings {
+ 
+   public class BoolSetting extends android.ext.settings.Setting<android.ext.settings.BoolSetting> {
+diff --git a/core/java/android/content/pm/GosPackageState.java b/core/java/android/content/pm/GosPackageState.java
+index 91daf0b27322..8e0a57e7e89d 100644
+--- a/core/java/android/content/pm/GosPackageState.java
++++ b/core/java/android/content/pm/GosPackageState.java
+@@ -37,6 +37,8 @@ public final class GosPackageState implements Parcelable {
+     public final byte[] storageScopes;
+     @Nullable
+     public final byte[] contactScopes;
++    @Nullable
++    public final byte[] locationScopes;
+     /**
+      * These flags are lazily derived from persistent state. They are intentionally skipped from
+      * equals() and hashCode(). derivedFlags are stored here for performance reasons, to avoid
+@@ -63,15 +65,17 @@ public final class GosPackageState implements Parcelable {
+ 
+     /** @hide */
+     public GosPackageState(long flagStorage1, long packageFlagStorage,
+-                           @Nullable byte[] storageScopes, @Nullable byte[] contactScopes) {
++                           @Nullable byte[] storageScopes, @Nullable byte[] contactScopes,
++                           @Nullable byte[] locationScopes) {
+         this.flagStorage1 = flagStorage1;
+         this.packageFlagStorage = packageFlagStorage;
+         this.storageScopes = storageScopes;
+         this.contactScopes = contactScopes;
++        this.locationScopes = locationScopes;
+     }
+ 
+     private static GosPackageState createEmpty() {
+-        return new GosPackageState(0L, 0L, null, null);
++        return new GosPackageState(0L, 0L, null, null, null);
+     }
+ 
+     private static final int TYPE_NONE = 0;
+@@ -94,6 +98,7 @@ public final class GosPackageState implements Parcelable {
+         dest.writeLong(this.packageFlagStorage);
+         dest.writeByteArray(storageScopes);
+         dest.writeByteArray(contactScopes);
++        dest.writeByteArray(locationScopes);
+         dest.writeInt(derivedFlags);
+     }
+ 
+@@ -106,7 +111,7 @@ public final class GosPackageState implements Parcelable {
+                 case TYPE_NONE: return NONE;
+             };
+             var res = new GosPackageState(in.readLong(), in.readLong(),
+-                    in.createByteArray(), in.createByteArray());
++                    in.createByteArray(), in.createByteArray(), in.createByteArray());
+             res.derivedFlags = in.readInt();
+             return res;
+         }
+@@ -119,7 +124,7 @@ public final class GosPackageState implements Parcelable {
+ 
+     @Override
+     public int hashCode() {
+-        return Long.hashCode(flagStorage1) + Arrays.hashCode(storageScopes) + Arrays.hashCode(contactScopes) + Long.hashCode(packageFlagStorage);
++        return Long.hashCode(flagStorage1) + Arrays.hashCode(storageScopes) + Arrays.hashCode(contactScopes) + Arrays.hashCode(locationScopes) + Long.hashCode(packageFlagStorage);
+     }
+ 
+     @Override
+@@ -139,6 +144,9 @@ public final class GosPackageState implements Parcelable {
+         if (!Arrays.equals(contactScopes, o.contactScopes)) {
+             return false;
+         }
++        if (!Arrays.equals(locationScopes, o.locationScopes)) {
++            return false;
++        }
+         if (packageFlagStorage != o.packageFlagStorage) {
+             return false;
+         }
+@@ -236,6 +244,7 @@ public final class GosPackageState implements Parcelable {
+         private long packageFlagStorage;
+         private byte[] storageScopes;
+         private byte[] contactScopes;
++        private byte[] locationScopes;
+         private int editorFlags;
+ 
+         /** @hide */
+@@ -246,6 +255,7 @@ public final class GosPackageState implements Parcelable {
+             this.packageFlagStorage = s.packageFlagStorage;
+             this.storageScopes = s.storageScopes;
+             this.contactScopes = s.contactScopes;
++            this.locationScopes = s.locationScopes;
+         }
+ 
+         @NonNull
+@@ -304,6 +314,12 @@ public final class GosPackageState implements Parcelable {
+             return this;
+         }
+ 
++        @NonNull
++        public Editor setLocationScopes(@Nullable byte[] locationScopes) {
++            this.locationScopes = locationScopes;
++            return this;
++        }
++
+         @NonNull
+         public Editor killUidAfterApply() {
+             return setKillUidAfterApply(true);
+@@ -334,7 +350,7 @@ public final class GosPackageState implements Parcelable {
+         public boolean apply() {
+             try {
+                 return ActivityThread.getPackageManager().setGosPackageState(packageName, userId,
+-                        new GosPackageState(flagStorage1, packageFlagStorage, storageScopes, contactScopes),
++                        new GosPackageState(flagStorage1, packageFlagStorage, storageScopes, contactScopes, locationScopes),
+                         editorFlags);
+             } catch (RemoteException e) {
+                 throw e.rethrowFromSystemServer();
+diff --git a/core/java/android/content/pm/GosPackageStateFlag.java b/core/java/android/content/pm/GosPackageStateFlag.java
+index 21abe5f9398d..2005d1b97624 100644
+--- a/core/java/android/content/pm/GosPackageStateFlag.java
++++ b/core/java/android/content/pm/GosPackageStateFlag.java
+@@ -36,6 +36,7 @@ public interface GosPackageStateFlag {
+     /** @hide */ int PLAY_INTEGRITY_API_USED_AT_LEAST_ONCE = 26;
+     /** @hide */ int SUPPRESS_PLAY_INTEGRITY_API_NOTIF = 27;
+     /** @hide */ int BLOCK_PLAY_INTEGRITY_API = 28;
++    /* SysApi */ int LOCATION_SCOPES_ENABLED = 29;
+ 
+     /** @hide */
+     @IntDef(value = {
+@@ -64,6 +65,7 @@ public interface GosPackageStateFlag {
+             PLAY_INTEGRITY_API_USED_AT_LEAST_ONCE,
+             SUPPRESS_PLAY_INTEGRITY_API_NOTIF,
+             BLOCK_PLAY_INTEGRITY_API,
++            LOCATION_SCOPES_ENABLED,
+     })
+     @Retention(RetentionPolicy.SOURCE)
+     @interface Enum {}
+diff --git a/core/java/android/ext/lscopes/LocationScopesApi.java b/core/java/android/ext/lscopes/LocationScopesApi.java
+new file mode 100644
+index 000000000000..296f2d185990
+--- /dev/null
++++ b/core/java/android/ext/lscopes/LocationScopesApi.java
+@@ -0,0 +1,28 @@
++package android.ext.lscopes;
++
++import android.annotation.NonNull;
++import android.annotation.SystemApi;
++import android.content.ComponentName;
++import android.content.Intent;
++
++/** @hide */
++@SystemApi
++public final class LocationScopesApi {
++
++    public static final int MODE_NORMAL = 0;
++    public static final int MODE_NOISY = 1;
++    public static final int MODE_FIXED = 2;
++
++    public static final float DEFAULT_FUZZ_RADIUS_M = 500f;
++
++    @NonNull
++    public static Intent createConfigActivityIntent(@NonNull String targetPkg) {
++        var i = new Intent();
++        String pkg = "com.android.permissioncontroller";
++        i.setComponent(ComponentName.createRelative(pkg, ".lscopes.LocationScopesActivity"));
++        i.putExtra(Intent.EXTRA_PACKAGE_NAME, targetPkg);
++        return i;
++    }
++
++    private LocationScopesApi() {}
++}
+diff --git a/core/java/android/ext/lscopes/LocationScopesConfig.java b/core/java/android/ext/lscopes/LocationScopesConfig.java
+new file mode 100644
+index 000000000000..a391ec9d0035
+--- /dev/null
++++ b/core/java/android/ext/lscopes/LocationScopesConfig.java
+@@ -0,0 +1,168 @@
++package android.ext.lscopes;
++
++import android.annotation.IntDef;
++import android.annotation.NonNull;
++import android.annotation.Nullable;
++import android.annotation.SystemApi;
++import android.util.Log;
++
++import java.io.ByteArrayInputStream;
++import java.io.ByteArrayOutputStream;
++import java.io.DataInputStream;
++import java.io.DataOutputStream;
++import java.lang.annotation.Retention;
++import java.lang.annotation.RetentionPolicy;
++import java.util.Objects;
++
++/** @hide */
++@SystemApi
++public final class LocationScopesConfig {
++    private static final String TAG = "LocationScopesConfig";
++    private static final int VERSION = 1;
++    private static final int VERSION_LEGACY = 0;
++
++    // Default TTL: 24 hours in milliseconds. Long enough to survive typical usage sessions
++    // without re-averaging risk; user can lower it or trigger manual refresh at any time.
++    public static final long DEFAULT_NOISY_TTL_MS = 24L * 60 * 60 * 1000;
++
++    // Hard ceiling to prevent overflow in elapsed-realtime delta arithmetic.
++    private static final long MAX_NOISY_TTL_MS = 30L * 24 * 60 * 60 * 1000; // 30 days
++
++    @IntDef(prefix = "MODE_", value = {
++            LocationScopesApi.MODE_NORMAL,
++            LocationScopesApi.MODE_NOISY,
++            LocationScopesApi.MODE_FIXED,
++    })
++    @Retention(RetentionPolicy.SOURCE)
++        @interface Mode {}
++
++    @Mode public final int mode;
++    public final double latitude;
++    public final double longitude;
++    public final double altitude;
++    public final float radiusMeters;
++    /** Milliseconds since last access before the noisy center is rotated. Must be > 0. */
++    public final long noisyTtlMs;
++    /**
++     * Monotonic cache epoch. Incrementing this value immediately invalidates the in-process
++     * noisy center for this app's UID without requiring a process kill.
++     */
++    public final int generation;
++
++    public LocationScopesConfig(@Mode int mode, double latitude, double longitude,
++            double altitude, float radiusMeters, long noisyTtlMs, int generation) {
++        this.mode = mode;
++        this.latitude = latitude;
++        this.longitude = longitude;
++        this.altitude = altitude;
++        this.radiusMeters = radiusMeters;
++        this.noisyTtlMs = clampTtl(noisyTtlMs);
++        this.generation = generation;
++    }
++
++    @NonNull
++    public static LocationScopesConfig defaultConfig() {
++        return new LocationScopesConfig(
++                LocationScopesApi.MODE_NOISY,
++                0d,
++                0d,
++                0d,
++                LocationScopesApi.DEFAULT_FUZZ_RADIUS_M,
++                DEFAULT_NOISY_TTL_MS,
++                0
++        );
++    }
++
++    @NonNull
++    public byte[] serialize() {
++        ByteArrayOutputStream bos = new ByteArrayOutputStream(80);
++        DataOutputStream out = new DataOutputStream(bos);
++        try {
++            out.writeByte(VERSION);
++            out.writeByte(mode);
++            out.writeDouble(latitude);
++            out.writeDouble(longitude);
++            out.writeDouble(altitude);
++            out.writeFloat(radiusMeters);
++            out.writeLong(noisyTtlMs);
++            out.writeInt(generation);
++            return bos.toByteArray();
++        } catch (Exception e) {
++            throw new IllegalStateException(e);
++        }
++    }
++
++    @NonNull
++    public static LocationScopesConfig deserialize(@Nullable byte[] serialized) {
++        if (serialized == null) {
++            return defaultConfig();
++        }
++
++        DataInputStream in = new DataInputStream(new ByteArrayInputStream(serialized));
++        try {
++            int version = in.readByte();
++            if (version != VERSION && version != VERSION_LEGACY) {
++                Log.e(TAG, "unexpected version " + version);
++                return defaultConfig();
++            }
++
++            int mode = in.readByte();
++            double latitude = in.readDouble();
++            double longitude = in.readDouble();
++            double altitude = in.readDouble();
++            float radiusMeters = in.readFloat();
++
++            if (mode < LocationScopesApi.MODE_NORMAL || mode > LocationScopesApi.MODE_FIXED) {
++                Log.e(TAG, "invalid mode " + mode);
++                return defaultConfig();
++            }
++
++            // v0 payloads end here; supply defaults for the new fields.
++            if (version == VERSION_LEGACY) {
++                return new LocationScopesConfig(mode, latitude, longitude, altitude, radiusMeters,
++                        DEFAULT_NOISY_TTL_MS, 0);
++            }
++
++            long noisyTtlMs = in.readLong();
++            int generation = in.readInt();
++
++            if (noisyTtlMs <= 0) {
++                Log.w(TAG, "non-positive noisyTtlMs " + noisyTtlMs + ", using default");
++                noisyTtlMs = DEFAULT_NOISY_TTL_MS;
++            }
++
++            return new LocationScopesConfig(mode, latitude, longitude, altitude, radiusMeters,
++                    noisyTtlMs, generation);
++        } catch (Exception e) {
++            Log.e(TAG, "deserialization failed", e);
++            return defaultConfig();
++        }
++    }
++
++    private static long clampTtl(long ttlMs) {
++        if (ttlMs <= 0) return DEFAULT_NOISY_TTL_MS;
++        return Math.min(ttlMs, MAX_NOISY_TTL_MS);
++    }
++
++    @Override
++    public boolean equals(Object obj) {
++        if (!(obj instanceof LocationScopesConfig)) {
++            return false;
++        }
++
++        LocationScopesConfig other = (LocationScopesConfig) obj;
++        return mode == other.mode
++                && Double.compare(latitude, other.latitude) == 0
++                && Double.compare(longitude, other.longitude) == 0
++                && Double.compare(altitude, other.altitude) == 0
++                && Float.compare(radiusMeters, other.radiusMeters) == 0
++                && noisyTtlMs == other.noisyTtlMs
++                && generation == other.generation;
++    }
++
++    @Override
++    public int hashCode() {
++        return Objects.hash(mode, latitude, longitude, altitude, radiusMeters, noisyTtlMs,
++                generation);
++    }
++}
+diff --git a/services/core/java/com/android/server/location/LocationScopesInterceptor.java b/services/core/java/com/android/server/location/LocationScopesInterceptor.java
+new file mode 100644
+index 000000000000..cb0eb69e0517
+--- /dev/null
++++ b/services/core/java/com/android/server/location/LocationScopesInterceptor.java
+@@ -0,0 +1,281 @@
++/*
++ * Copyright (C) 2024 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package com.android.server.location;
++
++import android.annotation.Nullable;
++import android.content.pm.GosPackageState;
++import android.content.pm.GosPackageStateFlag;
++import android.ext.lscopes.LocationScopesApi;
++import android.ext.lscopes.LocationScopesConfig;
++import android.location.Location;
++import android.location.LocationResult;
++import android.location.util.identity.CallerIdentity;
++import android.os.SystemClock;
++
++import java.security.SecureRandom;
++import java.util.HashMap;
++
++/**
++ * Applies Location Scopes policy to location data immediately before it is delivered to an app.
++ *
++ * All transform logic is centralised here. The three hook sites in
++ * {@link com.android.server.location.provider.LocationProviderManager} each make a single
++ * static call into this class; nothing else in the location stack is changed.
++ *
++ * Modes:
++ *   MODE_NORMAL — data passes through unchanged.
++ *   MODE_NOISY  — coordinates are displaced by a Gaussian random offset within radiusMeters.
++ *   MODE_FIXED  — coordinates are replaced by the configured lat/lon/alt plus hairline jitter.
++ *
++ * GNSS raw measurements are suppressed in MODE_FIXED via {@link #shouldBlockGnssMeasurements}.
++ *
++ * @hide
++ */
++public final class LocationScopesInterceptor {
++
++    private static final SecureRandom sRandom = new SecureRandom();
++
++    // Approximate metres per degree of latitude (constant at all latitudes).
++    private static final double METERS_PER_DEGREE_LAT = 111_000.0;
++
++    // Small jitter applied in FIXED mode to prevent a perfectly static coordinate.
++    private static final float FIXED_JITTER_METERS = 2f;
++
++    // Per-request micro-jitter applied on top of the cached noisy center.
++    // Small enough that averaging many samples still cannot recover the true location
++    // (the cached center is already displaced by radiusMeters), but large enough to
++    // prevent an obviously static output.
++    private static final float NOISY_JITTER_METERS = 2f;
++
++    // Accuracy reported for fixed-mode locations — looks like a perfect GPS fix.
++    private static final float FIXED_ACCURACY_M = 5.0f;
++
++    // Altitude fuzz standard deviation as a fraction of the horizontal radius.
++    // Keeps altitude noise plausible (a few metres at typical radii) without requiring
++    // a separate user-configurable parameter.
++    private static final float ALTITUDE_FUZZ_RATIO = 0.05f;
++
++    /**
++     * Cached noisy center for one UID.
++     *
++     * The center is an absolute coordinate derived from the true location at the time the entry
++     * was created, displaced by a Gaussian random offset. Subsequent deliveries return this
++     * absolute center plus micro-jitter, so the reported position stays anchored even as the
++     * device moves underneath.
++     *
++     * {@code lastAccessElapsedRealtimeMs} is updated on each reuse so the TTL is
++     * measured from last access, not from creation.
++     */
++    private static final class NoisyCacheEntry {
++        final double cachedLat;
++        final double cachedLon;
++        // NaN when the source had no altitude at cache-fill time; lazily filled on
++        // the first subsequent delivery that does carry altitude.
++        double cachedAltM;
++        final int generation;
++        long lastAccessElapsedRealtimeMs;
++
++        NoisyCacheEntry(double cachedLat, double cachedLon, double cachedAltM,
++                int generation, long lastAccessElapsedRealtimeMs) {
++            this.cachedLat = cachedLat;
++            this.cachedLon = cachedLon;
++            this.cachedAltM = cachedAltM;
++            this.generation = generation;
++            this.lastAccessElapsedRealtimeMs = lastAccessElapsedRealtimeMs;
++        }
++    }
++
++    // Guarded by itself. Keyed by UID.
++    private static final HashMap<Integer, NoisyCacheEntry> sNoisyCache = new HashMap<>();
++
++    /**
++     * Applies Location Scopes policy to a {@link LocationResult} before delivery.
++     *
++     * Returns {@code null} when the input is {@code null} (preserving the
++     * null-means-timeout contract used by {@code getCurrentLocation}).
++     */
++    @Nullable
++    public static LocationResult applyPolicy(
++            @Nullable LocationResult result, CallerIdentity identity) {
++        if (result == null) {
++            return null;
++        }
++        return result.map(loc -> applyPolicy(loc, identity));
++    }
++
++    /**
++     * Applies Location Scopes policy to a single {@link Location} before delivery.
++     *
++     * Returns {@code null} only when the input is {@code null}.
++     */
++    @Nullable
++    public static Location applyPolicy(@Nullable Location location, CallerIdentity identity) {
++        if (location == null) {
++            return null;
++        }
++
++        GosPackageState gosPs = GosPackageState.get(
++                identity.getPackageName(), identity.getUserId());
++        if (!gosPs.hasFlag(GosPackageStateFlag.LOCATION_SCOPES_ENABLED)) {
++            return location;
++        }
++
++        LocationScopesConfig cfg = LocationScopesConfig.deserialize(gosPs.locationScopes);
++        switch (cfg.mode) {
++            case LocationScopesApi.MODE_NOISY:
++                return applyNoisy(location, cfg, identity.getUid());
++            case LocationScopesApi.MODE_FIXED:
++                return applyFixed(location, cfg);
++            default: // MODE_NORMAL
++                return location;
++        }
++    }
++
++    /**
++     * Returns {@code true} if raw GNSS measurements should be suppressed for the given identity.
++     *
++     * Suppression is active only in MODE_FIXED: in that mode raw satellite data would let a
++     * determined app cross-check and detect the spoofed coordinates. In MODE_NOISY the real
++     * satellite constellation does not contradict a nearby-but-fuzzed position.
++     */
++    public static boolean shouldBlockGnssMeasurements(CallerIdentity identity) {
++        GosPackageState gosPs = GosPackageState.get(
++                identity.getPackageName(), identity.getUserId());
++        if (!gosPs.hasFlag(GosPackageStateFlag.LOCATION_SCOPES_ENABLED)) {
++            return false;
++        }
++        LocationScopesConfig cfg = LocationScopesConfig.deserialize(gosPs.locationScopes);
++        return cfg.mode == LocationScopesApi.MODE_FIXED;
++    }
++
++    // --- private transforms ------------------------------------------------------------------
++
++    private static Location applyNoisy(Location src, LocationScopesConfig cfg, int uid) {
++        double[] center = getCachedNoisyCenter(src, cfg, uid);
++        Location out = applyWithJitter(src, center[0], center[1], NOISY_JITTER_METERS,
++                Math.max(src.getAccuracy(), cfg.radiusMeters));
++        // center[2] is the cached fuzzed altitude, or NaN if altitude was never available.
++        if (!Double.isNaN(center[2])) {
++            out.setAltitude(center[2] + gaussianScalarMeters(NOISY_JITTER_METERS));
++        } else {
++            out.removeAltitude();
++        }
++        return out;
++    }
++
++    /**
++     * Returns {@code [cachedLat, cachedLon, cachedAltM]} for {@code uid}.
++     *
++     * {@code cachedAltM} is {@link Double#NaN} when no altitude has yet been seen for this
++     * cache epoch. It is lazily populated on the first delivery that carries altitude, so a
++     * cache hit with {@code NaN} altitude that now has a source altitude will update the entry
++     * in place rather than treating the absence as permanent.
++     */
++    private static double[] getCachedNoisyCenter(
++            Location src, LocationScopesConfig cfg, int uid) {
++        long now = SystemClock.elapsedRealtime();
++        float altStdDevM = cfg.radiusMeters * ALTITUDE_FUZZ_RATIO;
++        synchronized (sNoisyCache) {
++            NoisyCacheEntry entry = sNoisyCache.get(uid);
++            if (entry != null
++                    && entry.generation == cfg.generation
++                    && now - entry.lastAccessElapsedRealtimeMs <= cfg.noisyTtlMs) {
++                // Lazily derive altitude if this is the first delivery with altitude in the epoch.
++                if (Double.isNaN(entry.cachedAltM) && src.hasAltitude()) {
++                    entry.cachedAltM = src.getAltitude() + gaussianScalarMeters(altStdDevM);
++                }
++                entry.lastAccessElapsedRealtimeMs = now;
++                return new double[]{entry.cachedLat, entry.cachedLon, entry.cachedAltM};
++            }
++            // Cache miss or stale — displace the current true location and anchor there.
++            double[] offsets = gaussianOffsetDegrees(src.getLatitude(), cfg.radiusMeters);
++            double centerLat = src.getLatitude() + offsets[0];
++            double centerLon = src.getLongitude() + offsets[1];
++            double centerAlt = src.hasAltitude()
++                    ? src.getAltitude() + gaussianScalarMeters(altStdDevM)
++                    : Double.NaN;
++            sNoisyCache.put(uid, new NoisyCacheEntry(
++                    centerLat, centerLon, centerAlt, cfg.generation, now));
++            return new double[]{centerLat, centerLon, centerAlt};
++        }
++    }
++
++    private static Location applyFixed(Location src, LocationScopesConfig cfg) {
++        Location out = applyWithJitter(src, cfg.latitude, cfg.longitude,
++                FIXED_JITTER_METERS, FIXED_ACCURACY_M);
++        out.setAltitude(cfg.altitude);
++        return out;
++    }
++
++    /**
++     * Returns a copy of {@code src} with coordinates replaced by
++     * {@code (baseLat, baseLon) + Gaussian(jitterMeters)} and accuracy set to
++     * {@code accuracy}. Altitude is preserved from {@code src} unless the caller overrides it.
++     */
++    private static Location applyWithJitter(
++            Location src, double baseLat, double baseLon, float jitterMeters, float accuracy) {
++        double[] jitter = gaussianOffsetDegrees(baseLat, jitterMeters);
++        Location out = new Location(src);
++        out.setLatitude(baseLat + jitter[0]);
++        out.setLongitude(baseLon + jitter[1]);
++        out.setAccuracy(accuracy);
++        out.setMock(false);
++        return out;
++    }
++
++    /**
++     * Returns a {@code [latOffsetDegrees, lonOffsetDegrees]} pair drawn from a 2-D Gaussian
++     * distribution with the given standard deviation in metres, centred on {@code refLatitude}.
++     *
++     * Uses the Box–Muller transform. The longitude conversion accounts for convergence of
++     * meridians at high latitudes.
++     */
++    private static double[] gaussianOffsetDegrees(double refLatitude, float radiusMeters) {
++        double u1;
++        do {
++            u1 = sRandom.nextDouble();
++        } while (u1 == 0.0); // guard against log(0)
++        double u2 = sRandom.nextDouble();
++
++        double magnitude = radiusMeters * Math.sqrt(-2.0 * Math.log(u1));
++        double angle = 2.0 * Math.PI * u2;
++        double dx = magnitude * Math.cos(angle);
++        double dy = magnitude * Math.sin(angle);
++
++        double metersPerDegLon =
++                METERS_PER_DEGREE_LAT * Math.cos(Math.toRadians(refLatitude));
++        double latOffset = dx / METERS_PER_DEGREE_LAT;
++        double lonOffset = (metersPerDegLon > 0.0) ? dy / metersPerDegLon : 0.0;
++
++        return new double[]{latOffset, lonOffset};
++    }
++
++    /**
++     * Returns a scalar value drawn from a 1-D Gaussian distribution with the given
++     * standard deviation in metres. Uses one component of the Box–Muller transform.
++     */
++    private static double gaussianScalarMeters(float stdDevMeters) {
++        double u1;
++        do {
++            u1 = sRandom.nextDouble();
++        } while (u1 == 0.0);
++        double u2 = sRandom.nextDouble();
++        return stdDevMeters * Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
++    }
++
++    private LocationScopesInterceptor() {}
++}
+diff --git a/services/core/java/com/android/server/location/gnss/GnssMeasurementsProvider.java b/services/core/java/com/android/server/location/gnss/GnssMeasurementsProvider.java
+index 171fbb6f8a16..9ca19b4b3a75 100644
+--- a/services/core/java/com/android/server/location/gnss/GnssMeasurementsProvider.java
++++ b/services/core/java/com/android/server/location/gnss/GnssMeasurementsProvider.java
+@@ -41,6 +41,7 @@ import com.android.server.location.injector.AppOpsHelper;
+ import com.android.server.location.injector.Injector;
+ import com.android.server.location.injector.LocationUsageLogger;
+ import com.android.server.location.injector.SettingsHelper;
++import com.android.server.location.LocationScopesInterceptor;
+ 
+ import java.io.FileDescriptor;
+ import java.io.PrintWriter;
+@@ -264,6 +265,10 @@ public final class GnssMeasurementsProvider extends
+         deliverToListeners(registration -> {
+             if (mAppOpsHelper.noteOpNoThrow(AppOpsManager.OP_FINE_LOCATION,
+                     registration.getIdentity())) {
++                if (LocationScopesInterceptor.shouldBlockGnssMeasurements(
++                        registration.getIdentity())) {
++                    return null;
++                }
+                 EVENT_LOG.logGnssMeasurementsDelivered(event.getMeasurements().size(),
+                         registration.getIdentity());
+                 return listener -> listener.onGnssMeasurementsReceived(event);
+diff --git a/services/core/java/com/android/server/location/provider/LocationProviderManager.java b/services/core/java/com/android/server/location/provider/LocationProviderManager.java
+index 4bd32b67315e..660bcdcec9ee 100644
+--- a/services/core/java/com/android/server/location/provider/LocationProviderManager.java
++++ b/services/core/java/com/android/server/location/provider/LocationProviderManager.java
+@@ -105,6 +105,7 @@ import com.android.server.IoThread;
+ import com.android.server.LocalServices;
+ import com.android.server.location.LocationPermissions;
+ import com.android.server.location.LocationPermissions.PermissionLevel;
++import com.android.server.location.LocationScopesInterceptor;
+ import com.android.server.location.fudger.LocationFudger;
+ import com.android.server.location.fudger.LocationFudgerCache;
+ import com.android.server.location.injector.AlarmHelper;
+@@ -1048,6 +1049,13 @@ public class LocationProviderManager extends
+                         deliverLocationResult = locationResult;
+                     }
+ 
++                    // applyPolicy cannot return null here: locationResult (and hence
++                    // deliverLocationResult) is guaranteed non-null at this site (acceptLocationChange
++                    // only constructs a ListenerOperation when locationResult is non-null), and
++                    // applyPolicy only returns null when its input is null.
++                    deliverLocationResult = LocationScopesInterceptor.applyPolicy(
++                            deliverLocationResult, getIdentity());
++
+                     listener.deliverOnLocationChanged(deliverLocationResult,
+                             useWakeLock ? mWakeLockReleaser : null);
+                     EVENT_LOG.logProviderDeliveredLocations(mName, locationResult.size(),
+@@ -1395,6 +1403,9 @@ public class LocationProviderManager extends
+                         deliverLocationResult = locationResult;
+                     }
+ 
++                    deliverLocationResult = LocationScopesInterceptor.applyPolicy(
++                            deliverLocationResult, getIdentity());
++
+                     // we currently don't hold a wakelock for getCurrentLocation deliveries
+                     listener.deliverOnLocationChanged(deliverLocationResult, null);
+                     EVENT_LOG.logProviderDeliveredLocations(mName,
+@@ -1839,7 +1850,7 @@ public class LocationProviderManager extends
+             }
+         }
+ 
+-        return location;
++        return LocationScopesInterceptor.applyPolicy(location, identity);
+     }
+ 
+     private LastLocationRequest calculateLastLocationRequest(LastLocationRequest baseRequest,
+diff --git a/services/core/java/com/android/server/pm/GosPackageStatePermission.java b/services/core/java/com/android/server/pm/GosPackageStatePermission.java
+index 1013ec825b42..fa07baae7e1a 100644
+--- a/services/core/java/com/android/server/pm/GosPackageStatePermission.java
++++ b/services/core/java/com/android/server/pm/GosPackageStatePermission.java
+@@ -25,9 +25,10 @@ class GosPackageStatePermission {
+     static final int FIELD_STORAGE_SCOPES = 0;
+     static final int FIELD_CONTACT_SCOPES = 1;
+     static final int FIELD_PACKAGE_FLAGS = 2;
++    static final int FIELD_LOCATION_SCOPES = 3;
+ 
+     @IntDef(prefix = "FIELD_", value = {
+-            FIELD_STORAGE_SCOPES, FIELD_CONTACT_SCOPES, FIELD_PACKAGE_FLAGS
++            FIELD_STORAGE_SCOPES, FIELD_CONTACT_SCOPES, FIELD_PACKAGE_FLAGS, FIELD_LOCATION_SCOPES
+     })
+     @Retention(RetentionPolicy.SOURCE)
+     @interface Field {}
+@@ -214,6 +215,7 @@ class GosPackageStatePermission {
+                 , canReadField(FIELD_PACKAGE_FLAGS) ? ps.packageFlagStorage : default_.packageFlagStorage
+                 , canReadField(FIELD_STORAGE_SCOPES) ? ps.storageScopes : default_.storageScopes
+                 , canReadField(FIELD_CONTACT_SCOPES) ? ps.contactScopes : default_.contactScopes
++                , canReadField(FIELD_LOCATION_SCOPES) ? ps.locationScopes : default_.locationScopes
+         );
+         if (default_.equals(res)) {
+             return default_;
+@@ -235,6 +237,7 @@ class GosPackageStatePermission {
+                 , canWriteField(FIELD_PACKAGE_FLAGS) ? update.packageFlagStorage : current.packageFlagStorage
+                 , canWriteField(FIELD_STORAGE_SCOPES) ? update.storageScopes : current.storageScopes
+                 , canWriteField(FIELD_CONTACT_SCOPES) ? update.contactScopes : current.contactScopes
++                , canWriteField(FIELD_LOCATION_SCOPES) ? update.locationScopes : current.locationScopes
+         );
+         var default_ = GosPackageState.DEFAULT;
+         if (default_.equals(res)) {
+diff --git a/services/core/java/com/android/server/pm/GosPackageStatePermissions.java b/services/core/java/com/android/server/pm/GosPackageStatePermissions.java
+index 5c1348efce7f..70922f8617ed 100644
+--- a/services/core/java/com/android/server/pm/GosPackageStatePermissions.java
++++ b/services/core/java/com/android/server/pm/GosPackageStatePermissions.java
+@@ -27,6 +27,7 @@ import static android.content.pm.GosPackageStateFlag.BLOCK_NATIVE_DEBUGGING_NON_
+ import static android.content.pm.GosPackageStateFlag.BLOCK_NATIVE_DEBUGGING_SUPPRESS_NOTIF;
+ import static android.content.pm.GosPackageStateFlag.BLOCK_PLAY_INTEGRITY_API;
+ import static android.content.pm.GosPackageStateFlag.CONTACT_SCOPES_ENABLED;
++import static android.content.pm.GosPackageStateFlag.LOCATION_SCOPES_ENABLED;
+ import static android.content.pm.GosPackageStateFlag.ENABLE_EXPLOIT_PROTECTION_COMPAT_MODE;
+ import static android.content.pm.GosPackageStateFlag.FORCE_MEMTAG;
+ import static android.content.pm.GosPackageStateFlag.FORCE_MEMTAG_NON_DEFAULT;
+@@ -49,6 +50,7 @@ import static android.content.pm.GosPackageStateFlag.USE_HARDENED_MALLOC_NON_DEF
+ import static com.android.server.pm.GosPackageStatePermission.ALLOW_CROSS_USER_PROFILE_READS;
+ import static com.android.server.pm.GosPackageStatePermission.ALLOW_CROSS_USER_PROFILE_WRITES;
+ import static com.android.server.pm.GosPackageStatePermission.FIELD_CONTACT_SCOPES;
++import static com.android.server.pm.GosPackageStatePermission.FIELD_LOCATION_SCOPES;
+ import static com.android.server.pm.GosPackageStatePermission.FIELD_PACKAGE_FLAGS;
+ import static com.android.server.pm.GosPackageStatePermission.FIELD_STORAGE_SCOPES;
+ 
+@@ -76,7 +78,7 @@ class GosPackageStatePermissions {
+ 
+         selfAccessPermission = builder()
+                 .readFlags(STORAGE_SCOPES_ENABLED, ALLOW_ACCESS_TO_OBB_DIRECTORY,
+-                        CONTACT_SCOPES_ENABLED)
++                        CONTACT_SCOPES_ENABLED, LOCATION_SCOPES_ENABLED)
+                 .readFlags(playIntegrityFlags)
+                 .readWriteFlag(PLAY_INTEGRITY_API_USED_AT_LEAST_ONCE)
+                 .create();
+@@ -108,9 +110,9 @@ class GosPackageStatePermissions {
+                 .crossUserPermission(ALLOW_CROSS_USER_PROFILE_READS)
+                 .apply(ksp.launcher, computer);
+         builder()
+-                .readWriteFlags(STORAGE_SCOPES_ENABLED, CONTACT_SCOPES_ENABLED)
++                .readWriteFlags(STORAGE_SCOPES_ENABLED, CONTACT_SCOPES_ENABLED, LOCATION_SCOPES_ENABLED)
+                 .readWriteFields(FIELD_STORAGE_SCOPES, FIELD_CONTACT_SCOPES,
+-                        FIELD_PACKAGE_FLAGS)
++                        FIELD_PACKAGE_FLAGS, FIELD_LOCATION_SCOPES)
+                 // in some cases PermissionController handles user profile from profile parent user
+                 .crossUserPermission(ALLOW_CROSS_USER_PROFILE_READS)
+                 .apply(ksp.permissionController, computer);
+@@ -145,7 +147,7 @@ class GosPackageStatePermissions {
+         builder()
+                 .readWriteFlags(settingsReadWriteFlags)
+                 .readWriteFlags(playIntegrityFlags)
+-                .readFlags(STORAGE_SCOPES_ENABLED, CONTACT_SCOPES_ENABLED)
++                .readFlags(STORAGE_SCOPES_ENABLED, CONTACT_SCOPES_ENABLED, LOCATION_SCOPES_ENABLED)
+                 .readFields(FIELD_PACKAGE_FLAGS)
+                 .crossUserPermission(ALLOW_CROSS_USER_PROFILE_READS)
+                 .crossUserPermission(ALLOW_CROSS_USER_PROFILE_WRITES)
+diff --git a/services/core/java/com/android/server/pm/GosPackageStatePersistence.java b/services/core/java/com/android/server/pm/GosPackageStatePersistence.java
+index ee90810b457c..3c1fb26e043f 100644
+--- a/services/core/java/com/android/server/pm/GosPackageStatePersistence.java
++++ b/services/core/java/com/android/server/pm/GosPackageStatePersistence.java
+@@ -21,6 +21,7 @@ class GosPackageStatePersistence {
+     private static final String ATTR_PACKAGE_FLAG_STORAGE = "package-flags";
+     private static final String ATTR_STORAGE_SCOPES = "storage-scopes";
+     private static final String ATTR_CONTACT_SCOPES = "contact-scopes";
++    private static final String ATTR_LOCATION_SCOPES = "location-scopes";
+ 
+     /** @see Settings#writePackageRestrictions */
+     static void serialize(PackageUserStateInternal packageUserState, TypedXmlSerializer serializer) throws IOException {
+@@ -50,6 +51,12 @@ class GosPackageStatePersistence {
+                 serializer.attributeBytesHex(null, ATTR_CONTACT_SCOPES, s);
+             }
+         }
++        if (ps.hasFlag(GosPackageStateFlag.LOCATION_SCOPES_ENABLED)) {
++            byte[] s = ps.locationScopes;
++            if (s != null) {
++                serializer.attributeBytesHex(null, ATTR_LOCATION_SCOPES, s);
++            }
++        }
+         long packageFlagStorage = ps.packageFlagStorage;
+         if (packageFlagStorage != 0L) {
+             serializer.attributeLong(null, ATTR_PACKAGE_FLAG_STORAGE, ps.packageFlagStorage);
+@@ -61,6 +68,7 @@ class GosPackageStatePersistence {
+         long packageFlagStorage = 0L;
+         byte[] storageScopes = null;
+         byte[] contactScopes = null;
++        byte[] locationScopes = null;
+ 
+         for (int i = 0, numAttr = parser.getAttributeCount(); i < numAttr; ++i) {
+             String attr = parser.getAttributeName(i);
+@@ -73,11 +81,13 @@ class GosPackageStatePersistence {
+                     storageScopes = parser.getAttributeBytesHex(i);
+                 case ATTR_CONTACT_SCOPES ->
+                     contactScopes = parser.getAttributeBytesHex(i);
++                case ATTR_LOCATION_SCOPES ->
++                    locationScopes = parser.getAttributeBytesHex(i);
+                 default ->
+                     Slog.e(TAG, "deserialize: unknown attribute " + attr);
+             }
+         }
+-        return new GosPackageState(flagStorage1, packageFlagStorage, storageScopes, contactScopes);
++        return new GosPackageState(flagStorage1, packageFlagStorage, storageScopes, contactScopes, locationScopes);
+     }
+ 
+     // Compatibility with legacy serialized GosPackageState.
+@@ -91,7 +101,7 @@ class GosPackageStatePersistence {
+         long packageFlagStorage = parser.getAttributeLong(null, "GrapheneOS-package-flags", 0L);
+         byte[] storageScopes = parser.getAttributeBytesHex(null, "GrapheneOS-storage-scopes", null);
+         byte[] contactScopes = parser.getAttributeBytesHex(null, "GrapheneOS-contact-scopes", null);
+-        return new GosPackageState(flagStorage1, packageFlagStorage, storageScopes, contactScopes);
++        return new GosPackageState(flagStorage1, packageFlagStorage, storageScopes, contactScopes, null);
+     }
+ 
+     private static long migrateLegacyFlags(int flags) {
+diff --git a/services/tests/PackageManagerServiceTests/server/src/com/android/server/pm/PackageManagerSettingsTests.java b/services/tests/PackageManagerServiceTests/server/src/com/android/server/pm/PackageManagerSettingsTests.java
+index e4958e83552b..1b27fb7b9670 100644
+--- a/services/tests/PackageManagerServiceTests/server/src/com/android/server/pm/PackageManagerSettingsTests.java
++++ b/services/tests/PackageManagerServiceTests/server/src/com/android/server/pm/PackageManagerSettingsTests.java
+@@ -1509,7 +1509,8 @@ public class PackageManagerSettingsTests {
+         // argument values are random
+         return new GosPackageState(0xf0_bc_06_f1_f1_67_2e_b8L, 0xf4_93_53_00_98_c8_f0_0cL,
+                 hf.parseHex("2d f6 37 f2 90 39 da ef"),
+-                hf.parseHex("8b 9d 61 a3 3e 45 12")
++                hf.parseHex("8b 9d 61 a3 3e 45 12"),
++                hf.parseHex("4a c1 77 0e 9b 3d")
+         );
+     }
+ 
+-- 
+2.54.0
+

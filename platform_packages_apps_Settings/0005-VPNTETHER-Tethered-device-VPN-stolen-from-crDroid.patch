@@ -1,0 +1,117 @@
+From 7de5289dd8e2014c91d6f8330eadafd1abc08d95 Mon Sep 17 00:00:00 2001
+From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
+Date: Fri, 1 May 2026 22:43:23 -0500
+Subject: [PATCH 5/5] VPNTETHER: Tethered device VPN, stolen from crDroid
+
+---
+ res/values/strings.xml                        |  5 ++++
+ res/xml/tether_prefs.xml                      |  6 +++++
+ .../network/tether/TetherSettings.java        | 24 +++++++++++++++++++
+ 3 files changed, 35 insertions(+)
+
+diff --git a/res/values/strings.xml b/res/values/strings.xml
+index 5d3ecbe3ed6..d80ffb11cdc 100644
+--- a/res/values/strings.xml
++++ b/res/values/strings.xml
+@@ -4224,6 +4224,11 @@
+     <!-- Label for ethernet tether checkbox [CHAR LIMIT=NONE]-->
+     <string name="ethernet_tether_checkbox_text">Ethernet tethering</string>
+ 
++    <!-- Title for option to allow tethering to use the device VPN as upstream. [CHAR LIMIT=60]-->
++    <string name="tethering_allow_vpn_upstreams_title">Use VPN for connected devices</string>
++    <!-- Summary for option to allow tethering to use the device VPN as upstream. [CHAR LIMIT=NONE]-->
++    <string name="tethering_allow_vpn_upstreams_summary">When this device is using a VPN, devices connected to the hotspot use the same VPN</string>
++
+     <!-- Button label to modify a Ethernet network -->
+     <string name="ethernet_modify">Modify</string>
+ 
+diff --git a/res/xml/tether_prefs.xml b/res/xml/tether_prefs.xml
+index 977fccbb902..a7ebc226cbe 100644
+--- a/res/xml/tether_prefs.xml
++++ b/res/xml/tether_prefs.xml
+@@ -48,6 +48,12 @@
+         android:summary="@string/ethernet_tethering_subtext"
+         settings:keywords="@string/keywords_hotspot_tethering" />
+ 
++    <SwitchPreferenceCompat
++        android:key="tethering_allow_vpn_upstreams"
++        android:title="@string/tethering_allow_vpn_upstreams_title"
++        android:summary="@string/tethering_allow_vpn_upstreams_summary"
++        android:defaultValue="false" />
++
+     <com.android.settingslib.widget.FooterPreference
+         android:key="disabled_on_data_saver"
+         android:title="@string/tether_settings_disabled_on_data_saver"
+diff --git a/src/com/android/settings/network/tether/TetherSettings.java b/src/com/android/settings/network/tether/TetherSettings.java
+index cb250d81990..5cf15d90f3c 100644
+--- a/src/com/android/settings/network/tether/TetherSettings.java
++++ b/src/com/android/settings/network/tether/TetherSettings.java
+@@ -44,6 +44,7 @@ import android.os.Handler;
+ import android.os.UserHandle;
+ import android.os.UserManager;
+ import android.provider.SearchIndexableResource;
++import android.provider.Settings;
+ import android.text.TextUtils;
+ import android.util.Log;
+ 
+@@ -89,6 +90,8 @@ public class TetherSettings extends RestrictedDashboardFragment
+     @VisibleForTesting
+     static final String KEY_ENABLE_BLUETOOTH_TETHERING = "enable_bluetooth_tethering";
+     private static final String KEY_ENABLE_ETHERNET_TETHERING = "enable_ethernet_tethering";
++    private static final String KEY_TETHERING_ALLOW_VPN_UPSTREAMS =
++            "tethering_allow_vpn_upstreams";
+     private static final String KEY_DATA_SAVER_FOOTER = "disabled_on_data_saver";
+     @VisibleForTesting
+     static final String KEY_TETHER_PREFS_TOP_INTRO = "tether_prefs_top_intro";
+@@ -102,6 +105,8 @@ public class TetherSettings extends RestrictedDashboardFragment
+     TwoStatePreference mBluetoothTether;
+     @VisibleForTesting
+     TwoStatePreference mEthernetTether;
++    @VisibleForTesting
++    TwoStatePreference mAllowVpnUpstreams;
+ 
+     private BroadcastReceiver mTetherChangeReceiver;
+     @Nullable private BroadcastReceiver mBluetoothStateReceiver;
+@@ -170,6 +175,11 @@ public class TetherSettings extends RestrictedDashboardFragment
+         mDataSaverFooter = findPreference(KEY_DATA_SAVER_FOOTER);
+ 
+         setupTetherPreference();
++        if (UserHandle.myUserId() == UserHandle.USER_SYSTEM) {
++            mAllowVpnUpstreams.setChecked(isTetheringAllowVpnUpstreams());
++        } else {
++            getPreferenceScreen().removePreference(mAllowVpnUpstreams);
++        }
+         setupViewModel();
+ 
+         final Activity activity = getActivity();
+@@ -268,6 +278,18 @@ public class TetherSettings extends RestrictedDashboardFragment
+         mUsbTether = (RestrictedSwitchPreference) findPreference(KEY_USB_TETHER_SETTINGS);
+         mBluetoothTether = (TwoStatePreference) findPreference(KEY_ENABLE_BLUETOOTH_TETHERING);
+         mEthernetTether = (TwoStatePreference) findPreference(KEY_ENABLE_ETHERNET_TETHERING);
++        mAllowVpnUpstreams = (TwoStatePreference) findPreference(KEY_TETHERING_ALLOW_VPN_UPSTREAMS);
++    }
++
++    private boolean isTetheringAllowVpnUpstreams() {
++        return Settings.Secure.getIntForUser(mContext.getContentResolver(),
++                Settings.Secure.TETHERING_ALLOW_VPN_UPSTREAMS, 0, UserHandle.USER_SYSTEM) != 0;
++    }
++
++    private void setTetheringAllowVpnUpstreams(boolean enabled) {
++        Settings.Secure.putIntForUser(mContext.getContentResolver(),
++                Settings.Secure.TETHERING_ALLOW_VPN_UPSTREAMS, enabled ? 1 : 0,
++                UserHandle.USER_SYSTEM);
+     }
+ 
+     @Override
+@@ -625,6 +647,8 @@ public class TetherSettings extends RestrictedDashboardFragment
+             } else {
+                 mCm.stopTethering(TETHERING_ETHERNET);
+             }
++        } else if (preference == mAllowVpnUpstreams) {
++            setTetheringAllowVpnUpstreams(mAllowVpnUpstreams.isChecked());
+         }
+ 
+         return super.onPreferenceTreeClick(preference);
+-- 
+2.54.0
+

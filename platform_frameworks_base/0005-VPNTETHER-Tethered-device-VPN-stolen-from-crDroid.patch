@@ -1,0 +1,36 @@
+From 3144a6d888b0974c139680f87dbab53f93218a4a Mon Sep 17 00:00:00 2001
+From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
+Date: Fri, 1 May 2026 22:43:59 -0500
+Subject: [PATCH 5/9] VPNTETHER: Tethered device VPN, stolen from crDroid
+
+---
+ core/java/android/provider/Settings.java | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/core/java/android/provider/Settings.java b/core/java/android/provider/Settings.java
+index a4c920d56066..6cd850de3bad 100644
+--- a/core/java/android/provider/Settings.java
++++ b/core/java/android/provider/Settings.java
+@@ -13711,6 +13711,19 @@ public final class Settings {
+         public static final String EXTRA_AUTOMATIC_POWER_SAVE_MODE =
+                 "extra_automatic_power_save_mode";
+ 
++        /**
++         * Whether tethering is allowed to use VPN upstreams. (0 = false, 1 = true)
++         * Any changes here must also be reflected in:
++         * packages/modules/Connectivity/Tethering/src/com/android/networkstack/tethering/
++         * Tethering.java
++         * packages/modules/Connectivity/Tethering/src/com/android/networkstack/tethering/
++         * UpstreamNetworkMonitor.java
++         *
++         * @hide
++         */
++        public static final String TETHERING_ALLOW_VPN_UPSTREAMS =
++                "tethering_allow_vpn_upstreams";
++
+         /**
+          * Whether contextual screen timeout is enabled.
+          *
+-- 
+2.54.0
+
