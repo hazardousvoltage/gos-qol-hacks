@@ -1,12 +1,12 @@
-From af6a942b910002f57cf32791f7722e30020cc7f0 Mon Sep 17 00:00:00 2001
+From 25b9dbc9210f5764ea079dbe79ba1dd2c35023b2 Mon Sep 17 00:00:00 2001
 From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
 Date: Fri, 1 May 2026 22:44:29 -0500
 Subject: [PATCH] VPNTETHER: Tethered device VPN, stolen from crDroid
 
 ---
  .../networkstack/tethering/Tethering.java     | 41 +++++++++
- .../tethering/UpstreamNetworkMonitor.java     | 88 +++++++++++++++++--
- 2 files changed, 123 insertions(+), 6 deletions(-)
+ .../tethering/UpstreamNetworkMonitor.java     | 87 +++++++++++++++++--
+ 2 files changed, 122 insertions(+), 6 deletions(-)
 
 diff --git a/Tethering/src/com/android/networkstack/tethering/Tethering.java b/Tethering/src/com/android/networkstack/tethering/Tethering.java
 index 00103d68af..6084fcf1b8 100644
@@ -83,22 +83,21 @@ index 00103d68af..6084fcf1b8 100644
                          (ns != null) ? ns.linkProperties : null);
              }
 diff --git a/Tethering/src/com/android/networkstack/tethering/UpstreamNetworkMonitor.java b/Tethering/src/com/android/networkstack/tethering/UpstreamNetworkMonitor.java
-index 9705d847db..15761f80db 100644
+index 9705d847db..8e50742d70 100644
 --- a/Tethering/src/com/android/networkstack/tethering/UpstreamNetworkMonitor.java
 +++ b/Tethering/src/com/android/networkstack/tethering/UpstreamNetworkMonitor.java
-@@ -38,7 +38,11 @@ import android.net.Network;
+@@ -38,7 +38,10 @@ import android.net.Network;
  import android.net.NetworkCapabilities;
  import android.net.NetworkRequest;
  import android.os.Handler;
 +import android.os.Process;
-+import android.os.UserHandle;
 +import android.provider.Settings;
  import android.util.Log;
 +import android.util.Range;
  import android.util.SparseIntArray;
  
  import androidx.annotation.NonNull;
-@@ -49,6 +53,7 @@ import com.android.modules.utils.build.SdkLevel;
+@@ -49,6 +52,7 @@ import com.android.modules.utils.build.SdkLevel;
  import com.android.net.module.util.SharedLog;
  import com.android.networkstack.apishim.ConnectivityManagerShimImpl;
  import com.android.networkstack.apishim.common.ConnectivityManagerShim;
@@ -106,7 +105,7 @@ index 9705d847db..15761f80db 100644
  import com.android.networkstack.tethering.util.PrefixUtils;
  
  import java.util.HashMap;
-@@ -87,6 +92,9 @@ public class UpstreamNetworkMonitor {
+@@ -87,6 +91,9 @@ public class UpstreamNetworkMonitor {
      private static final boolean DBG = false;
      private static final boolean VDBG = false;
  
@@ -116,7 +115,7 @@ index 9705d847db..15761f80db 100644
      public static final int EVENT_ON_CAPABILITIES   = 1;
      public static final int EVENT_ON_LINKPROPERTIES = 2;
      public static final int EVENT_ON_LOST           = 3;
-@@ -135,6 +143,8 @@ public class UpstreamNetworkMonitor {
+@@ -135,6 +142,8 @@ public class UpstreamNetworkMonitor {
      // The current system default network (not really used yet).
      private Network mDefaultInternetNetwork;
      private boolean mPreferTestNetworks;
@@ -125,7 +124,7 @@ index 9705d847db..15761f80db 100644
  
      public UpstreamNetworkMonitor(Context ctx, Handler h, SharedLog log, EventListener listener) {
          mContext = ctx;
-@@ -158,12 +168,7 @@ public class UpstreamNetworkMonitor {
+@@ -158,12 +167,7 @@ public class UpstreamNetworkMonitor {
              Log.wtf(TAG, "default network callback is already registered");
              return;
          }
@@ -139,7 +138,7 @@ index 9705d847db..15761f80db 100644
          if (mEntitlementMgr == null) {
              mEntitlementMgr = entitle;
          }
-@@ -198,9 +203,42 @@ public class UpstreamNetworkMonitor {
+@@ -198,9 +202,42 @@ public class UpstreamNetworkMonitor {
          releaseCallback(mListenUpstreamCallback);
          mListenUpstreamCallback = null;
  
@@ -175,14 +174,14 @@ index 9705d847db..15761f80db 100644
 +    }
 +
 +    private boolean isAllowedToUseVpnUpstreams() {
-+        return Settings.Secure.getIntForUser(mContext.getContentResolver(),
-+                TETHERING_ALLOW_VPN_UPSTREAMS, 0, UserHandle.USER_SYSTEM) == 1;
++        return Settings.Secure.getInt(mContext.getContentResolver(),
++                TETHERING_ALLOW_VPN_UPSTREAMS, 0) == 1;
 +    }
 +
      private void reevaluateUpstreamRequirements(boolean tryCell, boolean autoUpstream,
              boolean dunRequired) {
          final boolean mobileRequestRequired = tryCell && (dunRequired || !autoUpstream);
-@@ -329,6 +367,19 @@ public class UpstreamNetworkMonitor {
+@@ -329,6 +366,19 @@ public class UpstreamNetworkMonitor {
       * Returns null if no current upstream is available.
       */
      public UpstreamNetworkState getCurrentPreferredUpstream() {
@@ -202,7 +201,7 @@ index 9705d847db..15761f80db 100644
          final UpstreamNetworkState dfltState = (mDefaultInternetNetwork != null)
                  ? mNetworkMap.get(mDefaultInternetNetwork)
                  : null;
-@@ -370,6 +421,11 @@ public class UpstreamNetworkMonitor {
+@@ -370,6 +420,11 @@ public class UpstreamNetworkMonitor {
      }
  
      private void handleNetCap(Network network, NetworkCapabilities newNc) {
@@ -214,7 +213,7 @@ index 9705d847db..15761f80db 100644
          final UpstreamNetworkState prev = mNetworkMap.get(network);
          if (prev == null || newNc.equals(prev.networkCapabilities)) {
              // Ignore notifications about networks for which we have not yet
-@@ -435,6 +491,10 @@ public class UpstreamNetworkMonitor {
+@@ -435,6 +490,10 @@ public class UpstreamNetworkMonitor {
          //     - deletes the entry from the map only when the LISTEN_ALL
          //       callback gets notified.
  
@@ -225,7 +224,7 @@ index 9705d847db..15761f80db 100644
          if (!mNetworkMap.containsKey(network)) {
              // Ignore loss of networks about which we had not previously
              // learned any information or for which we have already processed
-@@ -649,6 +709,22 @@ public class UpstreamNetworkMonitor {
+@@ -649,6 +708,22 @@ public class UpstreamNetworkMonitor {
                 && !isCellular(ns.networkCapabilities);
      }
  

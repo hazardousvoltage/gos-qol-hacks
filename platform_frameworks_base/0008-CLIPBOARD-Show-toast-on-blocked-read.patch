@@ -1,7 +1,7 @@
-From 83345943c5a50e7558d6122530b7f81ebd0dcf07 Mon Sep 17 00:00:00 2001
+From 0ab00707e46ff3c7effc0c9e620662e2b8211c39 Mon Sep 17 00:00:00 2001
 From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
 Date: Mon, 20 Apr 2026 10:48:30 -0500
-Subject: [PATCH 9/9] CLIPBOARD: Show toast on blocked read
+Subject: [PATCH 8/8] CLIPBOARD: Show toast on blocked read
 
 ---
  core/res/res/values/strings.xml               |  3 +

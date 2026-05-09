@@ -1,7 +1,7 @@
 From b64ae1a8fd318fea3166085430ba909961dec42b Mon Sep 17 00:00:00 2001
 From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
 Date: Tue, 28 Apr 2026 21:23:32 -0500
-Subject: [PATCH 3/5] DURESS: Setting page for duress fingerprint
+Subject: [PATCH 3/4] DURESS: Setting page for duress fingerprint
 
 ---
  .../fingerprint_rename_duress_dialog.xml      | 52 +++++++++++++++++++

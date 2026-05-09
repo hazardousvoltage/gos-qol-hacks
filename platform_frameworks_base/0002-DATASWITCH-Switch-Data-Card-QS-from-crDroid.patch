@@ -1,7 +1,7 @@
-From eda2045946d56409b6dd738b528adfa6dc9f2ea8 Mon Sep 17 00:00:00 2001
+From 1b7d411ef77381682a46f73a723c6fa29f9e29a3 Mon Sep 17 00:00:00 2001
 From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
 Date: Thu, 9 Apr 2026 19:31:10 -0500
-Subject: [PATCH 2/9] DATASWITCH: Switch Data Card QS from crDroid
+Subject: [PATCH 2/8] DATASWITCH: Switch Data Card QS from crDroid
 
 ---
  .../res/drawable/ic_qs_data_switch_0.xml      |   4 +
