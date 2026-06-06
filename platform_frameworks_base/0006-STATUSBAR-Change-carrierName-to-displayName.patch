@@ -1,0 +1,41 @@
+From c31b8b68aa4b1f72836cc8637cc6a73470084cd9 Mon Sep 17 00:00:00 2001
+From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
+Date: Sat, 2 May 2026 08:41:01 -0500
+Subject: [PATCH 06/10] STATUSBAR: Change carrierName to displayName
+
+---
+ .../data/repository/prod/MobileConnectionsRepositoryImpl.kt    | 3 ++-
+ .../repository/prod/MobileConnectionsRepositoryKairosImpl.kt   | 3 ++-
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/packages/SystemUI/src/com/android/systemui/statusbar/pipeline/mobile/data/repository/prod/MobileConnectionsRepositoryImpl.kt b/packages/SystemUI/src/com/android/systemui/statusbar/pipeline/mobile/data/repository/prod/MobileConnectionsRepositoryImpl.kt
+index 342fbda1669a..3bcf0c246678 100644
+--- a/packages/SystemUI/src/com/android/systemui/statusbar/pipeline/mobile/data/repository/prod/MobileConnectionsRepositoryImpl.kt
++++ b/packages/SystemUI/src/com/android/systemui/statusbar/pipeline/mobile/data/repository/prod/MobileConnectionsRepositoryImpl.kt
+@@ -486,7 +486,8 @@ constructor(
+             isOpportunistic = isOpportunistic,
+             isExclusivelyNonTerrestrial = isOnlyNonTerrestrialNetwork,
+             groupUuid = groupUuid,
+-            carrierName = carrierName.toString(),
++            carrierName =
++                displayName?.toString()?.takeIf { it.isNotBlank() } ?: carrierName.toString(),
+             profileClass = profileClass,
+         )
+ 
+diff --git a/packages/SystemUI/src/com/android/systemui/statusbar/pipeline/mobile/data/repository/prod/MobileConnectionsRepositoryKairosImpl.kt b/packages/SystemUI/src/com/android/systemui/statusbar/pipeline/mobile/data/repository/prod/MobileConnectionsRepositoryKairosImpl.kt
+index 844f4cafbabc..e4432a8178d1 100644
+--- a/packages/SystemUI/src/com/android/systemui/statusbar/pipeline/mobile/data/repository/prod/MobileConnectionsRepositoryKairosImpl.kt
++++ b/packages/SystemUI/src/com/android/systemui/statusbar/pipeline/mobile/data/repository/prod/MobileConnectionsRepositoryKairosImpl.kt
+@@ -598,7 +598,8 @@ constructor(
+             isOpportunistic = isOpportunistic,
+             isExclusivelyNonTerrestrial = isOnlyNonTerrestrialNetwork,
+             groupUuid = groupUuid,
+-            carrierName = carrierName.toString(),
++            carrierName =
++                displayName?.toString()?.takeIf { it.isNotBlank() } ?: carrierName.toString(),
+             profileClass = profileClass,
+         )
+ 
+-- 
+2.54.0
+
