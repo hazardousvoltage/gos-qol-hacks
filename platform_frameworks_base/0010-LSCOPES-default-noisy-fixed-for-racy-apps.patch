@@ -1,0 +1,25 @@
+From 470be117dd714a4108da3ee0fc1f34ffbec85dc6 Mon Sep 17 00:00:00 2001
+From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
+Date: Tue, 19 May 2026 19:54:38 -0500
+Subject: [PATCH 10/10] LSCOPES: default noisy->fixed for racy apps
+
+---
+ core/java/android/ext/lscopes/LocationScopesConfig.java | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/core/java/android/ext/lscopes/LocationScopesConfig.java b/core/java/android/ext/lscopes/LocationScopesConfig.java
+index a391ec9d0035..8af188d47f8b 100644
+--- a/core/java/android/ext/lscopes/LocationScopesConfig.java
++++ b/core/java/android/ext/lscopes/LocationScopesConfig.java
+@@ -63,7 +63,7 @@ public final class LocationScopesConfig {
+     @NonNull
+     public static LocationScopesConfig defaultConfig() {
+         return new LocationScopesConfig(
+-                LocationScopesApi.MODE_NOISY,
++                LocationScopesApi.MODE_FIXED,
+                 0d,
+                 0d,
+                 0d,
+-- 
+2.54.0
+

@@ -1,7 +1,7 @@
-From c188360444fbb33a1f8cfba69e9de6c304007e19 Mon Sep 17 00:00:00 2001
+From 33eff10a172ded2920efb3e2292a835a76ee7299 Mon Sep 17 00:00:00 2001
 From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
 Date: Wed, 29 Apr 2026 08:51:48 -0500
-Subject: [PATCH 3/8] LSCOPES: Clamp/normalize lat/lon near boundary cases
+Subject: [PATCH 03/10] LSCOPES: Clamp/normalize lat/lon near boundary cases
 
 ---
  .../location/LocationScopesInterceptor.java   | 32 ++++++++++++++++---

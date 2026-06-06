@@ -1,7 +1,7 @@
-From 0ab00707e46ff3c7effc0c9e620662e2b8211c39 Mon Sep 17 00:00:00 2001
+From 1a7778a0e5359acfa0f5d8d5d6c0d4620c186ba4 Mon Sep 17 00:00:00 2001
 From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
 Date: Mon, 20 Apr 2026 10:48:30 -0500
-Subject: [PATCH 8/8] CLIPBOARD: Show toast on blocked read
+Subject: [PATCH 08/10] CLIPBOARD: Show toast on blocked read
 
 ---
  core/res/res/values/strings.xml               |  3 +
@@ -24,7 +24,7 @@ index 4dffb4374a9a..4cd96f6fbfe2 100644
      <string name="more_item_label">More</string>
      <!-- Prepended to the shortcut for a menu item to indicate that the user should hold the MENU button together with the shortcut to invoke the item. For example, if the shortcut to open a new tab in browser is MENU and B together, then this would be prepended to the letter "B" -->
 diff --git a/core/res/res/values/symbols.xml b/core/res/res/values/symbols.xml
-index da03e9fb7888..dd57c242140a 100644
+index b458bd937cc8..ce2bcec65e60 100644
 --- a/core/res/res/values/symbols.xml
 +++ b/core/res/res/values/symbols.xml
 @@ -639,6 +639,7 @@

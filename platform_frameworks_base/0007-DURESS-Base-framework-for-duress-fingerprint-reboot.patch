@@ -1,7 +1,7 @@
-From 76814887acb0165e34a5c8795bd81e12271782f2 Mon Sep 17 00:00:00 2001
+From 2f7554f39e1342ee6c70685baa09ed38a1a0751a Mon Sep 17 00:00:00 2001
 From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
 Date: Tue, 28 Apr 2026 21:22:43 -0500
-Subject: [PATCH 7/8] DURESS: Base framework for duress-fingerprint reboot
+Subject: [PATCH 07/10] DURESS: Base framework for duress-fingerprint reboot
 
 ---
  .../hardware/fingerprint/DuressConfig.java    | 79 +++++++++++++++++++

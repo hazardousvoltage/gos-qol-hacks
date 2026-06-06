@@ -1,0 +1,40 @@
+From 85cc70e5473263c0b74f683d4d3cde46932beaaa Mon Sep 17 00:00:00 2001
+From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
+Date: Tue, 19 May 2026 19:21:31 -0500
+Subject: [PATCH 09/10] LSCOPES: last-known leak when scopes enabled offline
+
+---
+ .../com/android/server/location/LocationManagerService.java    | 3 ++-
+ .../server/location/provider/LocationProviderManager.java      | 2 +-
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/services/core/java/com/android/server/location/LocationManagerService.java b/services/core/java/com/android/server/location/LocationManagerService.java
+index c69f725a9da8..e19b98f55fd8 100644
+--- a/services/core/java/com/android/server/location/LocationManagerService.java
++++ b/services/core/java/com/android/server/location/LocationManagerService.java
+@@ -1082,7 +1082,8 @@ public class LocationManagerService extends ILocationManager.Stub implements
+             return null;
+         }
+ 
+-        return manager.getLastLocation(request, identity, permissionLevel);
++        return LocationScopesInterceptor.applyPolicy(
++                manager.getLastLocation(request, identity, permissionLevel), identity);
+     }
+ 
+     private LastLocationRequest validateLastLocationRequest(String provider,
+diff --git a/services/core/java/com/android/server/location/provider/LocationProviderManager.java b/services/core/java/com/android/server/location/provider/LocationProviderManager.java
+index 660bcdcec9ee..252285b017a6 100644
+--- a/services/core/java/com/android/server/location/provider/LocationProviderManager.java
++++ b/services/core/java/com/android/server/location/provider/LocationProviderManager.java
+@@ -1850,7 +1850,7 @@ public class LocationProviderManager extends
+             }
+         }
+ 
+-        return LocationScopesInterceptor.applyPolicy(location, identity);
++        return location;
+     }
+ 
+     private LastLocationRequest calculateLastLocationRequest(LastLocationRequest baseRequest,
+-- 
+2.54.0
+

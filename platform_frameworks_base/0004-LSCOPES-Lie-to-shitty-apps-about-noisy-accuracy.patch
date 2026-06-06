@@ -1,7 +1,7 @@
-From d96ada28263b42618a786dcdf4ef4ba8c2a4baf7 Mon Sep 17 00:00:00 2001
+From 361e14c5f49d46de8f665fc8aaf7f9e762b82384 Mon Sep 17 00:00:00 2001
 From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
 Date: Fri, 1 May 2026 21:00:51 -0500
-Subject: [PATCH 4/8] LSCOPES: Lie to shitty apps about noisy accuracy
+Subject: [PATCH 04/10] LSCOPES: Lie to shitty apps about noisy accuracy
 
 ---
  .../server/location/LocationScopesInterceptor.java | 14 +++++++++-----
