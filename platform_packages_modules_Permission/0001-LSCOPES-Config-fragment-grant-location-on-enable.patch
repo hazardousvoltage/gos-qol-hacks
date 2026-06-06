@@ -1,7 +1,7 @@
 From 23188920c8282cf31053ff714a927e51a70a1fde Mon Sep 17 00:00:00 2001
 From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
 Date: Thu, 9 Apr 2026 10:44:37 -0500
-Subject: [PATCH] LSCOPES: Config fragment, grant location on enable
+Subject: [PATCH 1/3] LSCOPES: Config fragment, grant location on enable
 
 ---
  PermissionController/AndroidManifest.xml      |   6 +

@@ -1,4 +1,4 @@
-From 02c1c6976ba17ded00c6c8172de5e468a506cfe9 Mon Sep 17 00:00:00 2001
+From a927268b2d24a231674790dba34009e13c0ffa50 Mon Sep 17 00:00:00 2001
 From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
 Date: Mon, 20 Apr 2026 10:47:31 -0500
 Subject: [PATCH 2/4] CLIPBOARD: AppInfo preference sets OP_READ_CLIPBOARD

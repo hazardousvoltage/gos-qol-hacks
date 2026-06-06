@@ -1,4 +1,4 @@
-From 25b9dbc9210f5764ea079dbe79ba1dd2c35023b2 Mon Sep 17 00:00:00 2001
+From e46fffb584023f4ac18f5029c21b88319d239492 Mon Sep 17 00:00:00 2001
 From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
 Date: Fri, 1 May 2026 22:44:29 -0500
 Subject: [PATCH] VPNTETHER: Tethered device VPN, stolen from crDroid

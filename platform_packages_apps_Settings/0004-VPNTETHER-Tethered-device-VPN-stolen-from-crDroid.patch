@@ -1,4 +1,4 @@
-From 339516dee8ffa969defbd07a1338d6a59c6f9bbb Mon Sep 17 00:00:00 2001
+From 37be2d6a71e4e425c2652ae74bcaa7e691bee5fc Mon Sep 17 00:00:00 2001
 From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
 Date: Fri, 1 May 2026 22:43:23 -0500
 Subject: [PATCH 4/4] VPNTETHER: Tethered device VPN, stolen from crDroid
@@ -10,7 +10,7 @@ Subject: [PATCH 4/4] VPNTETHER: Tethered device VPN, stolen from crDroid
  3 files changed, 35 insertions(+)
 
 diff --git a/res/values/strings.xml b/res/values/strings.xml
-index 0776144ec78..40ee2a3e665 100644
+index 73247218d6d..31f208ea7f0 100644
 --- a/res/values/strings.xml
 +++ b/res/values/strings.xml
 @@ -4224,6 +4224,11 @@
