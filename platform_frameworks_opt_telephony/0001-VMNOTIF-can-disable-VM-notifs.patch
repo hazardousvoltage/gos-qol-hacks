@@ -1,0 +1,24 @@
+From f3a66216bc1a648bd1c5df5451a518c6dacb5005 Mon Sep 17 00:00:00 2001
+From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
+Date: Fri, 5 Jun 2026 21:37:10 -0500
+Subject: [PATCH] VMNOTIF: can disable VM notifs
+
+---
+ .../internal/telephony/util/NotificationChannelController.java   | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/java/com/android/internal/telephony/util/NotificationChannelController.java b/src/java/com/android/internal/telephony/util/NotificationChannelController.java
+index ac6a385fa4..3365e4f9c8 100644
+--- a/src/java/com/android/internal/telephony/util/NotificationChannelController.java
++++ b/src/java/com/android/internal/telephony/util/NotificationChannelController.java
+@@ -147,6 +147,7 @@ public class NotificationChannelController {
+                 CHANNEL_ID_VOICE_MAIL,
+                 context.getText(R.string.notification_channel_voice_mail),
+                 NotificationManager.IMPORTANCE_DEFAULT);
++        voiceMailChannel.setBlockable(true);
+         voiceMailChannel.enableVibration(
+                 VoicemailNotificationSettingsUtil.getVibrationPreference(context));
+         context.getSystemService(NotificationManager.class)
+-- 
+2.54.0
+
