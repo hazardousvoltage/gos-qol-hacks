@@ -21,3 +21,9 @@ Small GrapheneOS QoL hacks I'm maintaining locally, most of which seem pretty un
 
 
 *DURESS*: This is highly WIP and may not be very good.  Lets you designate a fingerprint as "duress", and presenting that print at keyguard triggers an immediate unconfirmed reboot, landing in BFU state.  At least under USA law, law enforcement can compel presentation of a biometric but cannot compel divulging a password or PIN.  This lets users have biometric lock with at least a veneer of safety: you can use a weird finger for your normal biometric unlock, and set the "expected" one as duress.  Your attacker has at best a 1-in-10 chance of effecting a successful unlock, unless they surveil you to see which finger you normally use.  I chose to reboot rather than either trigger lockdown or trigger a data wipe, because it seems the most "duress-shaped" behavior while guarding against inadvertently presenting the wrong print, or the hardware getting it wrong, and wiping your device.  This is much less secure than just not using biometrics, and you should still trigger "lockdown mode" when going into shady situations.  You have been warned.  
+
+*STATUSBAR* Show the user-configured display name instead of carrier-sent name in status bar.  Nice for situations where you have two SIMs on the same carrier/MVNO and want to distinguish them easily there.
+
+*VMNOTIF* Make voicemail notifications blockable.  I never use my VM, and the only messages that get left there are spam.  I don't want notifications every 5 minutes telling me to check my spam, and I vehemently disagree with "these notification cannot be modified."  Wanna bet?
+
+*PERMNOTIF* Fix what appears to be an AOSP bug causing "already-notified" status for "read notifications access" and "all-device access" to be incorrectly persisted in PermissionController
