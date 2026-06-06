@@ -1,0 +1,49 @@
+From 8e4420cd20564f69282b9c5046ea0c2349a41f57 Mon Sep 17 00:00:00 2001
+From: Hazardous Voltage <104310555+hazardousvoltage@users.noreply.github.com>
+Date: Sat, 6 Jun 2026 09:52:39 -0500
+Subject: [PATCH 3/3] PERMNOTIF: fix recurrent permission notifications
+
+---
+ .../privacysources/AccessibilitySourceService.kt           | 7 ++++++-
+ .../privacysources/NotificationListenerCheck.kt            | 7 ++++++-
+ 2 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/PermissionController/src/com/android/permissioncontroller/privacysources/AccessibilitySourceService.kt b/PermissionController/src/com/android/permissioncontroller/privacysources/AccessibilitySourceService.kt
+index 1610901bcb..da94b9ab7d 100644
+--- a/PermissionController/src/com/android/permissioncontroller/privacysources/AccessibilitySourceService.kt
++++ b/PermissionController/src/com/android/permissioncontroller/privacysources/AccessibilitySourceService.kt
+@@ -547,7 +547,12 @@ class AccessibilitySourceService(val context: Context, val random: Random = Rand
+     }
+ 
+     private fun getNotifiedServices(): MutableSet<String> {
+-        return sharedPrefs.getStringSet(KEY_ALREADY_NOTIFIED_SERVICES, mutableSetOf<String>())!!
++        // getStringSet() values must not be modified directly:
++        // https://developer.android.com/reference/android/content/SharedPreferences#getStringSet(java.lang.String,%20java.util.Set)
++        return sharedPrefs
++            .getStringSet(KEY_ALREADY_NOTIFIED_SERVICES, emptySet())
++            .orEmpty()
++            .toMutableSet()
+     }
+ 
+     @VisibleForTesting
+diff --git a/PermissionController/src/com/android/permissioncontroller/privacysources/NotificationListenerCheck.kt b/PermissionController/src/com/android/permissioncontroller/privacysources/NotificationListenerCheck.kt
+index 58a6f1bc4c..9f2adfb491 100644
+--- a/PermissionController/src/com/android/permissioncontroller/privacysources/NotificationListenerCheck.kt
++++ b/PermissionController/src/com/android/permissioncontroller/privacysources/NotificationListenerCheck.kt
+@@ -343,7 +343,12 @@ class NotificationListenerCheckInternal(
+ 
+     @VisibleForTesting
+     fun getNotifiedComponents(): MutableSet<String> {
+-        return sharedPrefs.getStringSet(KEY_ALREADY_NOTIFIED_COMPONENTS, mutableSetOf<String>())!!
++        // getStringSet() values must not be modified directly:
++        // https://developer.android.com/reference/android/content/SharedPreferences#getStringSet(java.lang.String,%20java.util.Set)
++        return sharedPrefs
++            .getStringSet(KEY_ALREADY_NOTIFIED_COMPONENTS, emptySet())
++            .orEmpty()
++            .toMutableSet()
+     }
+ 
+     suspend fun removeDisabledComponentsFromNotifiedComponents(
+-- 
+2.54.0
+
